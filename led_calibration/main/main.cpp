@@ -44,16 +44,21 @@ void main_process()
     uint32_t duty = 0;
     
     while (1) {
-        
-        for (int n = 0 ; n < 4 ; n++)
-            ledC->updateDuty(leds[n], duty);
 
-        vTaskDelay(16 / portTICK_PERIOD_MS);
+      // loop over all LEDs
+      for (int n = 0 ; n < 4 ; n++)
+      {
+        // turn off all LEDs
+        for (int m = 0 ; m < 4 ; m++)
+          ledC->updateDuty(leds[m], 0);
 
-        duty++;
-        if (duty == duty_max)
-          duty = 0;
-
+        // Now slowly ramp up one led
+        for (duty = 0 ; duty < duty_max ; duty++)
+        {
+          ledC->updateDuty(leds[n], duty);
+          vTaskDelay(16 / portTICK_PERIOD_MS);
+        }
+      }
     }
 }
 

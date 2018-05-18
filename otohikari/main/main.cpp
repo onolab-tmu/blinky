@@ -58,19 +58,18 @@ float map_pwm(float frac)
 }
 
 /* Camera correction */
-float camera_corr_lut[8] = {
-  37.82324192, 41.3588755,  // red
-  8.71495763, 9.94289493, // white
-  15.34113082, 16.60783334, // blue
-  7.26587906, 8.26548027 // green
+float camera_corr_lut[4] = {
+  32.33597408,  // red
+  9.02059563,   // white
+  15.61660888,  // blue
+  8.26709997,   // green
 };
 
 float camera_pre_correction(float d, int n)
 {
-  float a = camera_corr_lut[2*n];
-  float b = camera_corr_lut[2*n+1];
+  float b = camera_corr_lut[n];
 
-  return (powf(b, d) - 1.) / a;
+  return (powf(b, d) - 1.) / (b - 1.);
 }
 
 // Options

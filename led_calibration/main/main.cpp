@@ -86,8 +86,8 @@ float camera_pre_correction(float d, int n)
 // LED & AUDIO
 #define MIN_DB (-70.0f)
 
-#define TIMESTEP 6
-#define STEP 1e-4
+#define TIMESTEP 60
+#define STEP 1e-3
 
 void main_process()
 {
@@ -110,38 +110,55 @@ void main_process()
       // loop over all LEDs
       for (int n = 0 ; n < 4 ; n++)
       {
+
         // turn off all LEDs
         for (int m = 0 ; m < 4 ; m++)
           ledC->updateDuty(leds[m], 0);
 
-        float time = STEP;
-        int counter = 0;
-
-        // Now slowly ramp up one led
-        while (time < 1.)
+        if (leds[n] == LED_RED)
         {
-          float dB = 20. * log10f(time);
-          duty_f = 1. - (dB / MIN_DB);
 
-          if (duty_f < 0.)
-            duty_f = 0.;
-          if (duty_f > 1.)
-            duty_f = 1.;
+          float time = STEP;
+          int counter = 0;
 
-          duty_f = map_pwm(duty_f);
-          duty_f = camera_pre_correction(duty_f, n);
+          // Now slowly ramp up one led
+          while (time <= 1.)
+          {
+            /*
+            float dB = (0-MIN_DB) * time;  
+            duty_f = 1. - (dB / MIN_DB);
+            */
+            duty_f = time;  // ramp up the LED directly in the decibel domain
 
-          duty = (int)(duty_f * duty_max);
+            if (duty_f < 0.)
+              duty_f = 0.;
+            if (duty_f > 1.)
+              duty_f = 1.;
 
-          ledC->updateDuty(leds[n], duty);
+            duty_f = map_pwm(duty_f);
+            duty_f = camera_pre_correction(duty_f, n);
 
-          if (counter % 50 == 0)
-            printf("time=%e db=%e duty_f=%e duty=%d\n", (double)time, (double)dB, (double)duty_f, (int)duty);
+            duty = (int)(duty_f * duty_max);
 
-          vTaskDelay(TIMESTEP / portTICK_PERIOD_MS);
+            ledC->updateDuty(leds[n], duty);
 
-          time += STEP;
-          counter += 1;
+            vTaskDelay(TIMESTEP / portTICK_PERIOD_MS);
+
+            time += STEP;
+            counter += 1;
+          }
+
+        }
+        else if (leds[n] == LED_BLUE)
+        {
+          // Use the Blue LED as reference at half PWM resolution
+          ledC->updateDuty(leds[2], 1 << (LED_RESOLUTION - 2));
+          vTaskDelay(10000 / portTICK_PERIOD_MS);  // 10 s
+        }
+        else
+        {
+          // This time, we will only work with RED and BLUE
+          continue;
         }
       }
     }

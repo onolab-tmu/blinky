@@ -87,6 +87,12 @@ float camera_pre_correction(float d, int n)
 #define LED_RESOLUTION LEDC_TIMER_12_BIT
 #define LED_FREQUENCY (16000)
 
+// DIP SWITCHES
+#define DIP_SWITCH_1 GPIO_NUM_13
+#define DIP_SWITCH_2 GPIO_NUM_32
+#define DIP_SWITCH_3 GPIO_NUM_33
+#define DIP_SWITCH_INPUT_PIN_SEL ((1ULL<<DIP_SWITCH_1) | (1ULL<<DIP_SWITCH_2) | (1ULL<<DIP_SWITCH_3))
+
 // AUDIO
 #define SAMPLE_RATE (16000)
 #define AUDIO_BUFFER_SIZE (64)
@@ -104,8 +110,56 @@ float camera_pre_correction(float d, int n)
 #define MIN_LIN 1e-8
 #define MAX_LIN 1e-3
 
+// States
+#define STATE_CALIBRATION 0
+#define STATE_RED_SIG_BLUE_REF 1
+#define STATE_2 2
+#define STATE_3 3
+#define STATE_4 4
+#define STATE_5 5
+#define STATE_6 6
+#define STATE_7 7
+typedef int state_t;
+state_t state_current = -1;
+
+// For the calibration
+#define CALIB_PERIOD_SEC 60
+float time_step_ms = 0;
+int counter = 0;
+int led_counter = 0;
+int led_step = 2;
+
+
+void dip_switch_config()
+{
+  gpio_config_t io_conf;
+  //set as output mode
+  io_conf.mode = GPIO_MODE_INPUT;
+  //bit mask of the pins that you want to set,e.g.GPIO18/19
+  io_conf.pin_bit_mask = DIP_SWITCH_INPUT_PIN_SEL;
+  //disable pull-down mode
+  io_conf.pull_down_en = GPIO_PULLDOWN_ENABLE;
+  //disable pull-up mode
+  io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
+  //configure GPIO with the given settings
+  gpio_config(&io_conf);
+}
+
+char dip_switch_read()
+{
+  char value = 0;
+  value |= gpio_get_level(DIP_SWITCH_1);
+  value |= gpio_get_level(DIP_SWITCH_2) << 1;
+  value |= gpio_get_level(DIP_SWITCH_3) << 2;
+
+  return value;
+}
+
 void main_process()
 {
+    // Configure dip switch and read current state
+    dip_switch_config();
+
     vector<int> leds{LED_RED, LED_WHITE, LED_BLUE, LED_GREEN};
     
     // for measuring elapsed time.
@@ -123,60 +177,109 @@ void main_process()
 #if ENABLE_MONITOR
     uint32_t counter = 0;
 #endif
-    
+
     while (1) {
         
         // Get the audio data.
         // This function waits until buffer is accumulated
         // audio_data is interleaved data. (length:AUDIO_BUFFER_SIZE x AUDIO_CHANNELS)
         float* audio_data = recorder->wait_for_buffer_to_accumulate();
-        
-        timer->start();
-        for (int n=0; n<AUDIO_CHANNELS; n++) {
-            double amp_val = 0.;
-            double power_val = 0.;
-            
-            for (int i=0; i<AUDIO_BUFFER_SIZE; i++) {
-                amp_val += audio_data[AUDIO_CHANNELS*i + n];
-                power_val += audio_data[AUDIO_CHANNELS*i + n] * audio_data[AUDIO_CHANNELS*i + n];
+
+        state_t state_new = dip_switch_read();
+
+        switch (state_new)
+        {
+
+          case STATE_CALIBRATION:
+            if (state_new != state_current)
+            {
+              // do some initialization
+              time_step_ms = (CALIB_PERIOD_SEC * 1000) / duty_max;
+              counter = 0;
+              led_counter = 0;
+              state_current = state_new;
+              for (int i=0 ; i < 4 ; i++)
+                ledC->updateDuty(leds[i], 0);
             }
 
-            amp_val /= AUDIO_BUFFER_SIZE;
-            
-            // This is the frame variance
-            double power_excluding_offset = power_val/AUDIO_BUFFER_SIZE - amp_val * amp_val;
+            if (counter == duty_max)
+            {
+              counter = 0;
+              ledC->updateDuty(leds[led_counter], 0);
+              led_counter = (led_counter + led_step) % 4;
+            }
+
+            ledC->updateDuty(leds[led_counter], counter);
+
+            counter++;
+
+            vTaskDelay(time_step_ms / portTICK_PERIOD_MS);
+
+            break;
+
+          case STATE_RED_SIG_BLUE_REF:
+
+            if (state_new != state_current)
+            {
+              // Turn off all LEDs
+              for (int i=0 ; i < 4 ; i++)
+                ledC->updateDuty(leds[i], 0);
+              // Use the Blue LED as reference at half PWM resolution
+              ledC->updateDuty(leds[2], (1 << (LED_RESOLUTION - 1)) - 1);
+              state_current = state_new;
+            }
+        
+            timer->start();
+            // Only single channel processing
+            for (int n=0; n<1; n++) {
+              double amp_val = 0.;
+              double power_val = 0.;
+
+              for (int i=0; i<AUDIO_BUFFER_SIZE; i++) {
+                amp_val += audio_data[AUDIO_CHANNELS*i + n];
+                power_val += audio_data[AUDIO_CHANNELS*i + n] * audio_data[AUDIO_CHANNELS*i + n];
+              }
+
+              amp_val /= AUDIO_BUFFER_SIZE;
+
+              // This is the frame variance
+              double power_excluding_offset = power_val/AUDIO_BUFFER_SIZE - amp_val * amp_val;
 
 #if ENABLE_LOG
-            // Log of variance
-            float dB = 10.0f * log10f(power_excluding_offset);
-            float duty_f = (dB - MIN_DB) / (MAX_DB - MIN_DB);
+              // Log of variance
+              float dB = 10.0f * log10f(power_excluding_offset);
+              float duty_f = (dB - MIN_DB) / (MAX_DB - MIN_DB);
 #else
-            // Linear from variance to PWM
-            float duty_f = (power_excluding_offset - MIN_LIN) / (MAX_LIN - MIN_LIN);
+              // Linear from variance to PWM
+              float duty_f = (power_excluding_offset - MIN_LIN) / (MAX_LIN - MIN_LIN);
 #endif
 
-            if (duty_f < 0.0f) duty_f = 0.0f;
-            if (duty_f > 1.0f) duty_f = 1.0f;
+              if (duty_f < 0.0f) duty_f = 0.0f;
+              if (duty_f > 1.0f) duty_f = 1.0f;
 
 #if ENABLE_LOG
-            duty_f = map_pwm(duty_f);
-            duty_f = camera_pre_correction(duty_f, 2*n);
+              duty_f = map_pwm(duty_f);
+              duty_f = camera_pre_correction(duty_f, 2*n);
 #endif
 
-            uint32_t duty = (uint32_t)(duty_f*duty_max);
-            ledC->updateDuty(leds[2*n], duty);
+              uint32_t duty = (uint32_t)(duty_f*duty_max);
+              ledC->updateDuty(leds[0], duty);
 
 #if ENABLE_MONITOR
-            if (counter % 50 == 0)
-              printf("power_val=%e db=%e duty_f=%e duty=%d\n", (double)power_excluding_offset, (double)dB, (double)duty_f, (int)duty);
-            counter += 1;
+              if (counter % 50 == 0)
+                printf("power_val=%e db=%e duty_f=%e duty=%d dip_val=%d\n",
+                    (double)power_excluding_offset, (double)dB, (double)duty_f, (int)duty, (int)dip_switch_read());
+
+              counter += 1;
 #endif
-            
-        }
-        float elapsed_time = timer->measure();
-        if (elapsed_time > (float)AUDIO_BUFFER_SIZE/(float)SAMPLE_RATE*1000.0f) {
-            // elapsed_time must be less than AUDIO_BUFFER_SIZE/SAMPLE_RATE*1000(msec)
-            printf("elapsed_time must be less than %f(msec)\n", (float)AUDIO_BUFFER_SIZE/(float)SAMPLE_RATE*1000.0f);
+
+            }
+            float elapsed_time = timer->measure();
+            if (elapsed_time > (float)AUDIO_BUFFER_SIZE/(float)SAMPLE_RATE*1000.0f) {
+              // elapsed_time must be less than AUDIO_BUFFER_SIZE/SAMPLE_RATE*1000(msec)
+              printf("elapsed_time must be less than %f(msec)\n", (float)AUDIO_BUFFER_SIZE/(float)SAMPLE_RATE*1000.0f);
+            }
+            break;
         }
     }
 }

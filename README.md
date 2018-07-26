@@ -42,7 +42,7 @@ Authors
 -------
 
 * The board was designed by [Evixar](https://www.evixar.com/) under directions from Robin Scheibler.
-* The code was written by [Evixar](https://www.evixar.com/) and then extended by Robin Scheibler.
+* The code was written by [Evixar](https://www.evixar.com/) and by Robin Scheibler.
 
 License
 -------

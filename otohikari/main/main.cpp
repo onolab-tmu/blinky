@@ -113,7 +113,7 @@ float camera_pre_correction(float d, int n)
 // States
 #define STATE_CALIBRATION 0
 #define STATE_RED_SIG_BLUE_REF 1
-#define STATE_2 2
+#define STATE_HELLOWORLD 2
 #define STATE_3 3
 #define STATE_4 4
 #define STATE_5 5
@@ -189,6 +189,12 @@ void main_process()
 
         switch (state_new)
         {
+
+
+          case STATE_HELLOWORLD:
+            printf("This is the helloworld state.");
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
+            break;
 
           case STATE_CALIBRATION:
             if (state_new != state_current)

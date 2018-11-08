@@ -64,6 +64,17 @@ static void __attribute__((noreturn)) switch_to_blinky_process()
     }
 }
 
+static void wifi_connected()
+{
+    vector<int> leds{LED_RED};
+    EVXLEDController* ledC = new EVXLEDController(LED_RESOLUTION, LED_FREQUENCY, leds);
+    
+    uint32_t duty_max = (uint32_t)powf(2.0f, LED_RESOLUTION) - 1;
+    ledC->updateDuty(leds[0], duty_max);
+    
+    vTaskDelete(NULL);
+}
+
 static esp_err_t event_handler(void *ctx, system_event_t *event)
 {
     switch (event->event_id) {
@@ -71,6 +82,8 @@ static esp_err_t event_handler(void *ctx, system_event_t *event)
         esp_wifi_connect();
         break;
         case SYSTEM_EVENT_STA_GOT_IP:
+        // LED (RED) ON
+        xTaskCreatePinnedToCore((TaskFunction_t)&wifi_connected, "wifi_connected", 4096, NULL, 6, NULL, 0);
         xEventGroupSetBits(wifi_event_group, CONNECTED_BIT);
         break;
         case SYSTEM_EVENT_STA_DISCONNECTED:
@@ -80,6 +93,41 @@ static esp_err_t event_handler(void *ctx, system_event_t *event)
         break;
     }
     return ESP_OK;
+}
+
+static void server_connected()
+{
+    vector<int> leds{LED_RED, LED_GREEN};
+    EVXLEDController* ledC = new EVXLEDController(LED_RESOLUTION, LED_FREQUENCY, leds);
+    
+    uint32_t duty_max = (uint32_t)powf(2.0f, LED_RESOLUTION) - 1;
+    ledC->updateDuty(leds[0], duty_max);
+    ledC->updateDuty(leds[1], duty_max);
+    
+    vTaskDelete(NULL);
+}
+
+// for LED animation while downloading
+static void download_process()
+{
+    vector<int> leds{LED_BLUE, LED_WHITE, LED_RED, LED_GREEN};
+    EVXLEDController* ledC = new EVXLEDController(LED_RESOLUTION, LED_FREQUENCY, leds);
+    
+    uint32_t duty_max = (uint32_t)powf(2.0f, LED_RESOLUTION) - 1;
+    
+    uint8_t rotate = 0;
+    while (1) {
+        for (int i=0; i<leds.size(); i++) {
+            if (i == rotate) {
+                ledC->updateDuty(leds[i], duty_max);
+            } else {
+                ledC->updateDuty(leds[i], 0);
+            }
+        }
+        rotate = (rotate+1)%leds.size();
+        
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
 }
 
 static void initialise_wifi(void)
@@ -111,6 +159,14 @@ static int read_until(char *buffer, char delim, int len)
         ++i;
     }
     return i + 1;
+}
+
+static bool http_header_is_404(char text[], int total_len) {
+    if (strstr(text, "404") != NULL) {
+        return true;
+    } else {
+        return false;
+    }
 }
 
 static int past_http_header_position(char text[], int total_len) {
@@ -180,6 +236,8 @@ static bool connect_to_http_server()
         return false;
     } else {
         ESP_LOGI(TAG, "Connected to server");
+        // LED (RED, GREEN) ON
+        xTaskCreatePinnedToCore((TaskFunction_t)&server_connected, "server_connected", 4096, NULL, 6, NULL, 0);
         return true;
     }
     return false;
@@ -230,7 +288,10 @@ static void ota_task(void *pvParameter)
     "Host: %s:%s\r\n"
     "User-Agent: esp-idf/1.0 esp32\r\n\r\n";
     
-    // hash
+    // Constraint
+    int32_t myNumber = atoi(MY_NUMBER);
+    bool isTargetDevice = false;
+    
     /*connect to http server*/
     if (connect_to_http_server()) {
         ESP_LOGI(TAG, "Connected to http server");
@@ -240,7 +301,7 @@ static void ota_task(void *pvParameter)
     }
     
     char *http_request = NULL;
-    int get_len = asprintf(&http_request, GET_FORMAT, HASH_FILENAME, SERVER_IP, SERVER_PORT);
+    int get_len = asprintf(&http_request, GET_FORMAT, CONSTRAINT_FILENAME, SERVER_IP, SERVER_PORT);
     if (get_len < 0) {
         ESP_LOGE(TAG, "Failed to allocate memory for GET request buffer");
         switch_to_blinky_process();
@@ -254,10 +315,113 @@ static void ota_task(void *pvParameter)
     } else {
         ESP_LOGI(TAG, "Send GET request to server succeeded");
     }
+    
+    bool resp_body_start = false;
+    bool flag = true;
+    int temp_char_len = 0;
+    /*deal with all receive packet*/
+    while (flag) {
+        memset(&text[temp_char_len], 0, TEXT_BUFFSIZE-temp_char_len);
+        int buff_len = recv(socket_id, &text[temp_char_len], TEXT_BUFFSIZE-temp_char_len, 0);
+        temp_char_len = 0;
+        
+        if (buff_len < 0) { /*receive error*/
+            ESP_LOGE(TAG, "Error: receive data error! errno=%d", errno);
+            close(socket_id);
+            flag = false;
+            //switch_to_blinky_process();
+        } else if (buff_len > 0 && !resp_body_start) { /*deal with response header*/
+            bool is404 = http_header_is_404(text, buff_len);
+            if (is404) { // not exist
+                isTargetDevice = true;
+            }
+            
+            int pos = past_http_header_position(text, buff_len);
+            if (pos > 0) {
+                resp_body_start = true;
+                
+                int write_len = buff_len - pos;
+                while (write_len >= 4) {
+                    int32_t* number = (int32_t*)&text[pos];
+                    if (myNumber == *number) {
+                        isTargetDevice = true;
+                    }
+                    
+                    pos += 4;
+                    write_len -= 4;
+                }
+                
+                if (write_len != 0) {
+                    temp_char_len = write_len;
+                    
+                    for (int i=0; i<temp_char_len; i++) {
+                        text[i] = text[pos+i];
+                    }
+                }
+            }
+            
+        } else if (buff_len > 0 && resp_body_start) { /*deal with response body*/
+            int pos = 0;
+            int write_len = buff_len;
+            while (write_len >= 4) {
+                int32_t* number = (int32_t*)&text[pos];
+                if (myNumber == *number) {
+                    isTargetDevice = true;
+                }
+                
+                pos += 4;
+                write_len -= 4;
+            }
+            
+            if (write_len != 0) {
+                temp_char_len = write_len;
+                
+                for (int i=0; i<temp_char_len; i++) {
+                    text[i] = text[pos+i];
+                }
+            }
+        } else if (buff_len == 0) {  /*packet over*/
+            flag = false;
+            ESP_LOGI(TAG, "Connection closed, all packets received");
+            close(socket_id);
+        } else {
+            ESP_LOGE(TAG, "Unexpected recv result");
+        }
+    }
+    
+    if (!isTargetDevice) {
+        switch_to_blinky_process();
+    }
+    
+    
+    // hash
+    /*connect to http server*/
+    if (connect_to_http_server()) {
+        ESP_LOGI(TAG, "Connected to http server");
+    } else {
+        ESP_LOGE(TAG, "Connect to http server failed!");
+        switch_to_blinky_process();
+    }
+    
+    http_request = NULL;
+    get_len = asprintf(&http_request, GET_FORMAT, HASH_FILENAME, SERVER_IP, SERVER_PORT);
+    if (get_len < 0) {
+        ESP_LOGE(TAG, "Failed to allocate memory for GET request buffer");
+        switch_to_blinky_process();
+    }
+    res = send(socket_id, http_request, get_len, 0);
+    free(http_request);
+    
+    if (res < 0) {
+        ESP_LOGE(TAG, "Send GET request to server failed");
+        switch_to_blinky_process();
+    } else {
+        ESP_LOGI(TAG, "Send GET request to server succeeded");
+    }
 
     int remain = 32;
     char hash[32+1] = {0};
-    bool resp_body_start = false, flag = true;
+    resp_body_start = false, flag = true;
     /*deal with all receive packet*/
     while (flag) {
         memset(text, 0, TEXT_BUFFSIZE);
@@ -355,105 +519,6 @@ static void ota_task(void *pvParameter)
         switch_to_blinky_process();
     }
     
-    // Constraint
-    int32_t myNumber = atoi(MY_NUMBER);
-    bool isTargetDevice = false;
-    
-    /*connect to http server*/
-    if (connect_to_http_server()) {
-        ESP_LOGI(TAG, "Connected to http server");
-    } else {
-        ESP_LOGE(TAG, "Connect to http server failed!");
-        switch_to_blinky_process();
-    }
-    
-    http_request = NULL;
-    get_len = asprintf(&http_request, GET_FORMAT, CONSTRAINT_FILENAME, SERVER_IP, SERVER_PORT);
-    if (get_len < 0) {
-        ESP_LOGE(TAG, "Failed to allocate memory for GET request buffer");
-        switch_to_blinky_process();
-    }
-    res = send(socket_id, http_request, get_len, 0);
-    free(http_request);
-    
-    if (res < 0) {
-        ESP_LOGE(TAG, "Send GET request to server failed");
-        switch_to_blinky_process();
-    } else {
-        ESP_LOGI(TAG, "Send GET request to server succeeded");
-    }
-    
-    resp_body_start = false;
-    flag = true;
-    int temp_char_len = 0;
-    /*deal with all receive packet*/
-    while (flag) {
-        memset(&text[temp_char_len], 0, TEXT_BUFFSIZE-temp_char_len);
-        int buff_len = recv(socket_id, &text[temp_char_len], TEXT_BUFFSIZE-temp_char_len, 0);
-        temp_char_len = 0;
-        
-        if (buff_len < 0) { /*receive error*/
-            ESP_LOGE(TAG, "Error: receive data error! errno=%d", errno);
-            close(socket_id);
-            flag = false;
-            //switch_to_blinky_process();
-        } else if (buff_len > 0 && !resp_body_start) { /*deal with response header*/
-            int pos = past_http_header_position(text, buff_len);
-            if (pos > 0) {
-                resp_body_start = true;
-                
-                int write_len = buff_len - pos;
-                while (write_len >= 4) {
-                    int32_t* number = (int32_t*)&text[pos];
-                    if (myNumber == *number) {
-                        isTargetDevice = true;
-                    }
-                    
-                    pos += 4;
-                    write_len -= 4;
-                }
-                
-                if (write_len != 0) {
-                    temp_char_len = write_len;
-                    
-                    for (int i=0; i<temp_char_len; i++) {
-                        text[i] = text[pos+i];
-                    }
-                }
-            }
-            
-        } else if (buff_len > 0 && resp_body_start) { /*deal with response body*/
-            int pos = 0;
-            int write_len = buff_len;
-            while (write_len >= 4) {
-                int32_t* number = (int32_t*)&text[pos];
-                if (myNumber == *number) {
-                    isTargetDevice = true;
-                }
-                
-                pos += 4;
-                write_len -= 4;
-            }
-            
-            if (write_len != 0) {
-                temp_char_len = write_len;
-                
-                for (int i=0; i<temp_char_len; i++) {
-                    text[i] = text[pos+i];
-                }
-            }
-        } else if (buff_len == 0) {  /*packet over*/
-            flag = false;
-            ESP_LOGI(TAG, "Connection closed, all packets received");
-            close(socket_id);
-        } else {
-            ESP_LOGE(TAG, "Unexpected recv result");
-        }
-    }
-    
-    if (!isTargetDevice) {
-        switch_to_blinky_process();
-    }
     
     // app
     /*connect to http server*/

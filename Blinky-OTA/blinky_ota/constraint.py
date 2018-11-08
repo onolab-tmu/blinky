@@ -1,5 +1,6 @@
 import os
 import struct
+import sys
 
 
 def create_set(val):
@@ -16,6 +17,13 @@ def create_set(val):
     return s
 
 
+# check exist
+if not os.path.exists('target.txt'):
+    # erase
+    if os.path.exists('build/constraint.bin'):
+        os.remove('build/constraint.bin')
+    sys.exit()
+        
 # read
 f = open('target.txt')
 target = f.read()

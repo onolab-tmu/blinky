@@ -6,6 +6,8 @@
 #include "EVXTimer.h"
 #include "EVXLEDController.h"
 #include "EVXAudioRecorder.h"
+#include "biquad.h"
+#include "notch.h"
 
 #define LUT_SIZE 61
 #define LUT_BASE
@@ -72,6 +74,29 @@ float camera_pre_correction(float d, int n)
 #define ENABLE_MONITOR 1
 #define ENABLE_LOG 1
 
+// LED & AUDIO
+#if ENABLE_LOG
+#define MIN_DB (-80.0f)
+#define MAX_DB (-10.0f)
+#endif
+
+#define MIN_LIN 5e-9
+#define MAX_LIN 5e-2
+
+#define MU 100000.f
+float mu_law(float d)
+{
+  static float c = 1.f / logf(1.f + MU);
+  return logf(1 + MU * d) * c;
+}
+
+float sigmoid(float d)
+{
+  static float loc = (MAX_DB + MIN_DB) / 2.;
+  static float scale = (MAX_DB - MIN_DB) / 2. / 4.;
+  return 1. / (1. + expf(- (d - loc) / scale));
+}
+
 
 // LED
 #define LED_GREEN (25) // Left  Bottom
@@ -97,15 +122,6 @@ float camera_pre_correction(float d, int n)
 #define I2S_DATA_IN (22)
 #define CPU_NUMBER (0)
 
-// LED & AUDIO
-#if ENABLE_LOG
-#define MIN_DB (-70.0f)
-#define MAX_DB (-10.0f)
-#endif
-
-#define MIN_LIN 1e-8
-#define MAX_LIN 1e-3
-
 // States
 #define STATE_WHITE_SIG_NO_REF 0
 #define STATE_CALIBRATION 1
@@ -125,6 +141,22 @@ int counter = 0;
 int led_counter = 0;
 int led_step = 2;
 
+// DC removal filter
+#define DC_REMOVAL_ALPHA 0.99
+DCRemoval dc_rm(DC_REMOVAL_ALPHA);
+
+// The low-pass filter
+// layer 0
+float b0[3] = {2.277266369348854e-13, 4.554532738697708e-13, 2.277266369348854e-13};
+float a0[2] = {-1.9698662504229276, 0.970109297917869};
+// layer 1
+float b1[3] = {1.0, 2.0, 1.0};
+float a1[2] = {-1.9777864837767636, 0.9780305084917958};
+// layer 2
+float b2[3] = {1.0, 2.0, 1.0};
+float a2[2] = {-1.9916564785864912, 0.9919022146194836};
+// The vector of biquads
+vector<Biquad> biquads{ Biquad(b0, a0), Biquad(b1, a1), Biquad(b2, a2) };
 
 void dip_switch_config()
 {
@@ -153,11 +185,14 @@ char dip_switch_read()
 
 void main_process()
 {
+
+    float duty_f;
+
     // Configure dip switch and read current state
     dip_switch_config();
 
     vector<int> leds{LED_RED, LED_WHITE, LED_BLUE, LED_GREEN};
-    
+
     // for measuring elapsed time.
     EVXTimer* timer = new EVXTimer();
     // for controlling LEDs.
@@ -244,43 +279,36 @@ void main_process()
             timer->start();
             // Only single channel processing
             for (int n=0; n<1; n++) {
-              double amp_val = 0.;
-              double power_val = 0.;
 
+              float filter_output = 0.;
               for (int i=0; i<AUDIO_BUFFER_SIZE; i++) {
-                amp_val += audio_data[AUDIO_CHANNELS*i + n];
-                power_val += audio_data[AUDIO_CHANNELS*i + n] * audio_data[AUDIO_CHANNELS*i + n];
+                // remove the mean using a notch filter
+                float sample = dc_rm.process(audio_data[AUDIO_CHANNELS*i + n]);
+
+                // process the power through low-pass filter
+                filter_output =  sample * sample;
+                for (int i = 0 ; i < biquads.size() ; i++)
+                  filter_output = biquads[i].process(filter_output);
               }
 
-              amp_val /= AUDIO_BUFFER_SIZE;
+              float dB = 10.0f * log10f(filter_output);
 
-              // This is the frame variance
-              double power_excluding_offset = power_val/AUDIO_BUFFER_SIZE - amp_val * amp_val;
-
-#if ENABLE_LOG
-              // Log of variance
-              float dB = 10.0f * log10f(power_excluding_offset);
-              float duty_f = (dB - MIN_DB) / (MAX_DB - MIN_DB);
-#else
-              // Linear from variance to PWM
-              float duty_f = (power_excluding_offset - MIN_LIN) / (MAX_LIN - MIN_LIN);
-#endif
-
+              // map to [0,1]
+              duty_f = (filter_output - MIN_LIN) / (MAX_LIN - MIN_LIN);
               if (duty_f < 0.0f) duty_f = 0.0f;
               if (duty_f > 1.0f) duty_f = 1.0f;
 
-#if ENABLE_LOG
-              duty_f = map_pwm(duty_f);
-              duty_f = camera_pre_correction(duty_f, 2*n);
-#endif
+              // apply non-linear transform
+              //duty_f = mu_law(duty_f);
+              duty_f = sigmoid(dB);
 
               uint32_t duty = (uint32_t)(duty_f*duty_max);
               ledC->updateDuty(leds[0], duty);
 
 #if ENABLE_MONITOR
               if (counter % 50 == 0)
-                printf("power_val=%e db=%e duty_f=%e duty=%d dip_val=%d\n",
-                    (double)power_excluding_offset, (double)dB, (double)duty_f, (int)duty, (int)dip_switch_read());
+                printf("power_val=%e db=%d duty_f=%e duty=%d dip_val=%d\n",
+                    (double)filter_output, (int)dB, (double)duty_f, (int)duty, (int)dip_switch_read());
 
               counter += 1;
 #endif
@@ -319,9 +347,9 @@ void main_process()
               // This is the frame variance
               double power_excluding_offset = power_val/AUDIO_BUFFER_SIZE - amp_val * amp_val;
 
+              float dB = 10.0f * log10f(power_excluding_offset);
 #if ENABLE_LOG
               // Log of variance
-              float dB = 10.0f * log10f(power_excluding_offset);
               float duty_f = (dB - MIN_DB) / (MAX_DB - MIN_DB);
 #else
               // Linear from variance to PWM

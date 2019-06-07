@@ -22,6 +22,13 @@ def mu_law(x, mu):
 def sigmoid(x, loc, scale):
     return 1. / (1. + np.exp(- (x - loc) / scale))
 
+def sigmoid_shaped(x, rg, h):
+    loc = np.mean(rg)
+    x_h = np.log( (1 - h) / (1 - (1 - h)) )  # inv sigmoid
+    scale = (rg[1] - rg[0]) / 2 / x_h
+
+    return sigmoid(x, loc, scale)
+
 if __name__ == '__main__':
 
     mu = float(sys.argv[1])
@@ -35,11 +42,15 @@ if __name__ == '__main__':
     y_map = map(x_lin, min_lin, max_lin)
     y_mu = mu_law(y_map, mu)
     y_sig = sigmoid(x, np.mean([min_log, max_log]), (max_log - min_log) / 2 / 4)
+    y_sig_2 = sigmoid_shaped(x, [min_log, max_log], 0.01)
+    y_db_mu = mu_law((x - min_log) / (max_log - min_log), mu)
 
     PWM_MAX = 4095
 
     plt.plot(x, PWM_MAX * y_mu, label='mu')
+    plt.plot(x, PWM_MAX * y_db_mu, label='mu (dB)')
     plt.plot(x, PWM_MAX * y_sig, label='sigmoid')
+    plt.plot(x, PWM_MAX * y_sig_2, label='sigmoid shaped')
     plt.legend()
     plt.xlabel('Input power')
     plt.ylabel('Output')

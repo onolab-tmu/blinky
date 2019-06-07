@@ -1,76 +1,67 @@
-blinky_ota firmware について
-===================
+#blinky_ota について
 
-The `blinky_ota` firmware has two main functions
-
-1. Blinky, i.e. sound-to-light conversion
-2. Over-the-air (OTA) update, that is, the device will check a specific server on specific wifi network for firmware updates at boot time
-
-The procedure to compile and flash the firmware the first time (via wire), and the subsequent
-procedure for OTA updates are described.
+blinky_otaは OTA (Over The Air) でプログラムの更新を行うことができます。<br>
+その為には、`make menuconfig`での設定と、1度だけ有線接続での書き込みが必要となります。<br>
+詳細は以下を参照ください。
 
 ---
 
-Configuration of the firmware
------------------------------
-
-### 1. menuconfig
-
-The initial configuration of the firmware is done by running `make menuconfig`
+##1. menuconfig
+blinky_otaには`make menuconfig`で設定していただく項目があります。
 
 ```
 cd blinky_ota
 make menuconfig
 ```
+`Blinky Configuration`を選択してください。<br>
+ここには、5つの設定項目があります。<br>
+全Blinky共通の設定が4つ、個々のBlinky毎に設定する項目が1つあります。
 
-Choose `Blinky Configuration`.
-There are 5 different options in this category.
-Four of these are general to all the devices, but the last one is a device specific ID number.
+###1-1. 全Blinky共通の設定
+まずは、全Blinkyで共通の設定項目が4つあります。
 
-### 1-1. General settings for all Blinkies
+- ####WiFi SSID<br>
 
-First, we configure the general settings.
+	使用する2.4GHz帯無線LANルータのSSIDを入力してください。
 
-- **WiFi SSID:** The SSID of the 2.4 GHz Wireless LAN that will be used for OTA.
+- ####WiFi Password<br>
 
-- **WiFi Password:** The password of said network.
+	上記SSIDに対応するパスワードを入力してください。
 
-- **HTTP Server IP:** The IP address on this network of the HTTP server used for OTA.
+- ####HTTP Server IP
 
-- **HTTP Server Port:** The port on which the server is listening. If left blank, a default
-  port will be used (8070).
+	HTTP Server として使用する PC の IPアドレスを入力してください。
 
+- ####HTTP Server Port
 
-### 1-2. Device-specific ID number configuration
-
-The last setting is that of that device's ID number. This number will be used to target some firmware updates to only some devices.
-
-- **Individual number of blinky:** The ID of the Blinky.
+	HTTP Server で使用するポート番号を入力してください。<br>
+	特に指定がなければデフォルト設定のままで問題ありません。
 
 
-2. Flashing the Blinky via USB
-------------------------------
+###1-2. 個々のBlinkyでの設定
+個々のBlinkyで設定する項目が1つあります。
 
-The first time the `blinky_ota` firmware is uploaded to the device needs to be done via USB.
+- ####Individual number of blinky
+
+	個体番号を入力してください。1以上の整数を想定しています。
+
+##2. 有線接続での書き込み
+blinky_otaは OTA(Over The Air) に対応したプログラムですが、
+最初に 有線で接続して書き込みを行う必要があります。
 
 ```
 make erase_flash flash
 ```
 
-Unlike most cases, for `blinky_ota`, we need to clear the flash memory first
-via the `erase_flash` command.
+通常の書き込みと異なり、`erase_flash`が必要ですのでご注意ください。
 
-3. Flashing the Blinky via Wifi (OTA)
--------------------------------------
+##3. 無線接続での書き込み
+上記の設定、書き込みが完了していれば、次からはOTAでの書き込みが可能となります。
 
-Assuming all the above setup have been successfully carried out, it is now
-possible to do OTA firmware update.
-
-### 3-1. ターゲットの設定
-### 3-1. Define the target devices
-
-The update may be targeted to only some select devices by using the `server/target.txt` file.
-Here is the content of an example target file.
+###3-1. ターゲットの設定
+書き込みを行うBlinkyを指定する為に、target.txtを編集します。<br>
+target.txtはblinky_otaフォルダの直下に配置されています。<br>
+target.txtを開くと以下のような構成になっています
 
 ```
 add
@@ -79,22 +70,18 @@ remove
 5-10,20,30
 ```
 
-The command `add` by itself on a line indicates that the Blinkies listed by their
-ID on the following line are candidates for firmware update.
-The command `remove` indicates that on the contrary the ID listed on the following line
-should not be updated.
+`add`の次の行が、書き込み対象となる個体番号の指定<br>
+`remove`の次の行が、`add`の中から排除する個体番号の指定となります。<br>
+個体番号の指定は `1-50`のようにすると1番から50番までを対象とします。<br>
+また、`,`で区切ることでいくつでも数字を指定することができます。<br>
 
-The ID can be listed in comma separated list individually, e.g. `3,4,7`, in range, e.g. `1-5`, or a mix, e.g. `1, 3, 4-7`.
+上記の例では実際に書き込み対象となる個体番号は
 
-Note that `add` should come before `remove`, and they should both appear only once in the file.
+> 1から4, 11から19, 21から29, 31から50, 60, 70, 80, 90
 
-In the above examples, the following ID are targeted:
+となります。 
 
-```
-1 to 4, 11 to 19, 21 to 29, 31 to 50, 60, 70, 80, 90
-```
-
-Finally, if the `target.txt` file does not exist, all Blinkies are targets for firmware update.
+また、target.txtが存在しない場合には、全部のBlinkyが書き込み対象となります。
  
 ###3-2. ビルド
 プログラムのビルドおよびハッシュ値の作成、<br>target.txtからターゲットとする個体番号の計算を行います。

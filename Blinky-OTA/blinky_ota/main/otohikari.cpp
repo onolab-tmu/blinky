@@ -80,20 +80,24 @@ float camera_pre_correction(float d, int n)
 #define MAX_DB (-10.0f)
 #endif
 
-#define MIN_LIN 5e-9
-#define MAX_LIN 5e-2
+#define MIN_LIN 1e-8
+#define MAX_LIN 1e-1
 
-#define MU 100000.f
+#define DUTY_MAX_RATIO 0.49
+
+#define MU 100.f
 float mu_law(float d)
 {
   static float c = 1.f / logf(1.f + MU);
   return logf(1 + MU * d) * c;
 }
 
+#define SIG_MARGIN 0.01
 float sigmoid(float d)
 {
+  static float x_h = logf( (1 - SIG_MARGIN) / (1 - (1 - SIG_MARGIN)) );
   static float loc = (MAX_DB + MIN_DB) / 2.;
-  static float scale = (MAX_DB - MIN_DB) / 2. / 4.;
+  static float scale = (MAX_DB - MIN_DB) / 2. / x_h;
   return 1. / (1. + expf(- (d - loc) / scale));
 }
 
@@ -126,7 +130,7 @@ float sigmoid(float d)
 #define STATE_WHITE_SIG_NO_REF 0
 #define STATE_CALIBRATION 1
 #define STATE_RED_SIG_BLUE_REF 2
-#define STATE_HELLOWORLD 3
+#define STATE_RED_BLUE_DOUBLE_REF 3
 #define STATE_4 4
 #define STATE_5 5
 #define STATE_6 6
@@ -144,6 +148,7 @@ int led_step = 2;
 // DC removal filter
 #define DC_REMOVAL_ALPHA 0.99
 DCRemoval dc_rm(DC_REMOVAL_ALPHA);
+DCRemoval pwr_dc_rm(DC_REMOVAL_ALPHA);
 
 // The low-pass filter
 // layer 0
@@ -224,15 +229,17 @@ void main_process()
         {
 
 
-          case STATE_HELLOWORLD:
+          case STATE_RED_BLUE_DOUBLE_REF:
             if (state_new != state_current)
             {
+              // Turn off all LEDs
               for (int i=0 ; i < 4 ; i++)
                 ledC->updateDuty(leds[i], 0);
+              // Use the Blue LED as reference at half PWM resolution
+              uint32_t duty_ref = (uint32_t)(duty_max * DUTY_MAX_RATIO);
+              ledC->updateDuty(leds[0], duty_ref);
+              ledC->updateDuty(leds[2], duty_ref);
               state_current = state_new;
-
-              printf("This is the helloworld state.\n");
-              ledC->updateDuty(leds[3], 255);
             }
             vTaskDelay(100 / portTICK_PERIOD_MS);
             break;
@@ -272,7 +279,8 @@ void main_process()
               for (int i=0 ; i < 4 ; i++)
                 ledC->updateDuty(leds[i], 0);
               // Use the Blue LED as reference at half PWM resolution
-              ledC->updateDuty(leds[2], (1 << (LED_RESOLUTION - 1)) - 1);
+              uint32_t duty_ref = (uint32_t)(duty_max * DUTY_MAX_RATIO);
+              ledC->updateDuty(leds[2], duty_ref);
               state_current = state_new;
             }
 
@@ -291,24 +299,30 @@ void main_process()
                   filter_output = biquads[i].process(filter_output);
               }
 
-              float dB = 10.0f * log10f(filter_output);
+              // Apply the non-linear transformation
+              float val_db = 10.0f * log10f(filter_output);
+              duty_f = (val_db - MIN_DB) / (MAX_DB - MIN_DB);
 
-              // map to [0,1]
-              duty_f = (filter_output - MIN_LIN) / (MAX_LIN - MIN_LIN);
               if (duty_f < 0.0f) duty_f = 0.0f;
               if (duty_f > 1.0f) duty_f = 1.0f;
 
-              // apply non-linear transform
-              //duty_f = mu_law(duty_f);
-              duty_f = sigmoid(dB);
+              duty_f = map_pwm(duty_f);
+              duty_f = camera_pre_correction(duty_f, 2*n);
 
-              uint32_t duty = (uint32_t)(duty_f*duty_max);
+              // Detect if the signal is too large
+              if (duty_f > 0.99)
+                ledC->updateDuty(leds[1], 400);
+              else
+                ledC->updateDuty(leds[1], 0);
+
+              // Set the LED duty cycle
+              uint32_t duty = (uint32_t)(duty_f * duty_max * DUTY_MAX_RATIO);
               ledC->updateDuty(leds[0], duty);
 
 #if ENABLE_MONITOR
               if (counter % 50 == 0)
                 printf("power_val=%e db=%d duty_f=%e duty=%d dip_val=%d\n",
-                    (double)filter_output, (int)dB, (double)duty_f, (int)duty, (int)dip_switch_read());
+                    (double)filter_output, (int)val_db, (double)duty_f, (int)duty, (int)dip_switch_read());
 
               counter += 1;
 #endif

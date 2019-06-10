@@ -1,7 +1,11 @@
 {
   "access_point" : {
-    "ssid" : "blinkynet",
-    "network" : ["192.168.0.1", "255.255.255.0", "192.168.0.1", "192.168.0.1"]
+    "config" : {
+      "essid": "blinkynet",
+      "password": "iloveblinky",
+      "authmode": 3
+    },
+    "ifconfig" : ["192.168.0.2", "255.255.255.0", "192.168.0.2", "192.168.0.2"]
   },
   "server" : {
     "port" : 8070

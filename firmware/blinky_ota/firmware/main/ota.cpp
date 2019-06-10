@@ -26,6 +26,7 @@
 #define BIN_FILENAME "blinky.bin"
 #define HASH_FILENAME "hash.txt"
 #define CONSTRAINT_FILENAME "constraint.bin"
+#define HASH_LEN_BYTES 64
 #define MY_NUMBER CONFIG_BLINKY_NUMBER
 #define BUFFSIZE 1024
 #define TEXT_BUFFSIZE 1024
@@ -255,18 +256,20 @@ static void ota_task(void *pvParameter)
         err = nvs_flash_init();
     }
     ESP_ERROR_CHECK( err );
+
+    printf("This is device Blinky-#%s\n", MY_NUMBER);
     
     initialise_wifi();
     
     /* update handle : set by esp_ota_begin(), must be freed via esp_ota_end() */
     esp_ota_handle_t update_handle = 0 ;
     const esp_partition_t *update_partition = NULL;
-    
+
     ESP_LOGI(TAG, "Starting OTA ...");
-    
+
     const esp_partition_t *configured = esp_ota_get_boot_partition();
     const esp_partition_t *running = esp_ota_get_running_partition();
-    
+
     if (configured != running) {
         ESP_LOGW(TAG, "Configured OTA boot partition at offset 0x%08x, but running from offset 0x%08x",
                  configured->address, running->address);
@@ -274,7 +277,7 @@ static void ota_task(void *pvParameter)
     }
     ESP_LOGI(TAG, "Running partition type %d subtype %d (offset 0x%08x)",
              running->type, running->subtype, running->address);
-    
+
     /* Wait for the callback to set the CONNECTED_BIT in the
      event group.
      */
@@ -284,14 +287,14 @@ static void ota_task(void *pvParameter)
     
     /*send GET request to http server*/
     const char *GET_FORMAT =
-    "GET %s HTTP/1.0\r\n"
+    "GET /%s HTTP/1.0\r\n"
     "Host: %s:%s\r\n"
     "User-Agent: esp-idf/1.0 esp32\r\n\r\n";
     
     // Constraint
     int32_t myNumber = atoi(MY_NUMBER);
     bool isTargetDevice = false;
-    
+
     /*connect to http server*/
     if (connect_to_http_server()) {
         ESP_LOGI(TAG, "Connected to http server");
@@ -335,7 +338,7 @@ static void ota_task(void *pvParameter)
             if (is404) { // not exist
                 isTargetDevice = true;
             }
-            
+
             int pos = past_http_header_position(text, buff_len);
             if (pos > 0) {
                 resp_body_start = true;
@@ -390,8 +393,10 @@ static void ota_task(void *pvParameter)
     }
     
     if (!isTargetDevice) {
+      ESP_LOGI(TAG, "The device is not targeted for update. Switch to Blinky.");
         switch_to_blinky_process();
     }
+    ESP_LOGI(TAG, "The device is targeted for update. Proceeding.");
     
     
     // hash
@@ -419,8 +424,8 @@ static void ota_task(void *pvParameter)
         ESP_LOGI(TAG, "Send GET request to server succeeded");
     }
 
-    int remain = 32;
-    char hash[32+1] = {0};
+    int remain = HASH_LEN_BYTES;  // Expected size of the hash
+    char hash[HASH_LEN_BYTES+1] = {0};
     resp_body_start = false, flag = true;
     /*deal with all receive packet*/
     while (flag) {
@@ -488,6 +493,7 @@ static void ota_task(void *pvParameter)
             switch_to_blinky_process();
         }
         blinky_hash[required_size] = 0;
+        printf("required_size=%d hash=%s blinky_hash=%s\n", required_size, hash, blinky_hash);
         
         if (strcmp(blinky_hash, hash) != 0) {
             isNewVersion = true;
@@ -496,28 +502,13 @@ static void ota_task(void *pvParameter)
         free(blinky_hash);
     }
     
-    if (isNewVersion) {
-        // write
-        size_t write_size = 32;
-        err = nvs_set_blob(my_handle, "blinky_hash", hash, write_size);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "NVS save failed.");
-            switch_to_blinky_process();
-        }
-        
-        err = nvs_commit(my_handle);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "NVS commit failed.");
-            switch_to_blinky_process();
-        }
-    }
-    
     nvs_close(my_handle);
     
     if (!isNewVersion) {
-        
+      ESP_LOGI(TAG, "The firmware is up-to-date. Switching to Blinky.");
         switch_to_blinky_process();
     }
+    ESP_LOGI(TAG, "There is a new version of the firmware. Proceeding.");
     
     
     // app
@@ -605,6 +596,31 @@ static void ota_task(void *pvParameter)
         ESP_LOGE(TAG, "esp_ota_set_boot_partition failed (%s)!", esp_err_to_name(err));
         switch_to_blinky_process();
     }
+
+
+    // When the update succeeds, we write the hash to flash
+    err = nvs_open(STORAGE_NAMESPACE, NVS_READWRITE, &my_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Update succeded, but writing hash (NVS Open) failed.");
+        esp_restart();
+    }
+
+    // write
+    size_t write_size = strlen(hash);
+    err = nvs_set_blob(my_handle, "blinky_hash", hash, write_size);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Update succeeded, but writing hash (NVS save) failed.");
+        esp_restart();
+    }
+
+    err = nvs_commit(my_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Update succeeded, but writing hash (NVS commit) failed.");
+        esp_restart();
+    }
+
+    nvs_close(my_handle);
+
     ESP_LOGI(TAG, "Prepare to restart system!");
     esp_restart();
     

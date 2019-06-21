@@ -101,8 +101,9 @@ void main_process()
       }
     }
 
+    // We should not do too many printf in a tight loop so
+    // we restrict it to once every second
     if (timer->measure() > 1000.0f) {
-      // elapsed_time must be less than AUDIO_BUFFER_SIZE/SAMPLE_RATE*1000(msec)
       printf("State: %d Power: %f\n", (int)state, max_pwr);
       timer->start();
     }

@@ -78,7 +78,7 @@ void main_process()
     float max_pwr = -10000.;
 
     // Loop over samples, two at a time because of two channels
-    for (int n = 0; n < AUDIO_BUFFER_SIZE; n += AUDIO_CHANNELS)
+    for (int n = 0 ; n < 2 * AUDIO_BUFFER_SIZE ; n += AUDIO_CHANNELS)
     {
       for (int ch = 0 ; ch < AUDIO_CHANNELS ; ch++)
       {
@@ -91,15 +91,15 @@ void main_process()
 
         if (sample_db > max_pwr)
           max_pwr = sample_db;
-
-        // Turn on the LED (at PWM max duty cycle, i.e. continuously ON)
-        // if power is larger than 70 decibels
-        if (sample_db > -40)
-          ledC->updateDuty(leds[0], duty_max);
-        else
-          ledC->updateDuty(leds[0], 0.);
       }
     }
+
+    // Turn on the LED (at PWM max duty cycle, i.e. continuously ON)
+    // if power is larger than 70 decibels
+    if (max_pwr > -40)
+      ledC->updateDuty(leds[0], duty_max);
+    else
+      ledC->updateDuty(leds[0], 0.);
 
     // We should not do too many printf in a tight loop so
     // we restrict it to once every second

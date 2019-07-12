@@ -83,7 +83,7 @@ float camera_pre_correction(float d, int n)
 #define MIN_LIN 1e-8
 #define MAX_LIN 1e-1
 
-#define DUTY_MAX_RATIO 0.49
+#define DUTY_MAX_RATIO 0.125
 
 #define MU 100.f
 float mu_law(float d)
@@ -131,7 +131,7 @@ float sigmoid(float d)
 #define STATE_CALIBRATION 1
 #define STATE_RED_SIG_BLUE_REF 2
 #define STATE_RED_BLUE_DOUBLE_REF 3
-#define STATE_4 4
+#define STATE_CALIBRATION_MAP 4
 #define STATE_5 5
 #define STATE_6 6
 #define STATE_7 7
@@ -152,16 +152,37 @@ DCRemoval pwr_dc_rm(DC_REMOVAL_ALPHA);
 
 // The low-pass filter
 // layer 0
-float b0[3] = {2.277266369348854e-13, 4.554532738697708e-13, 2.277266369348854e-13};
-float a0[2] = {-1.9698662504229276, 0.970109297917869};
+float b0[3] = {5.014634167540541e-44, 1.0029268335081083e-43, 5.014634167540541e-44};
+float a0[2] = {-1.9752411410866457, 0.9753950104692238};
 // layer 1
 float b1[3] = {1.0, 2.0, 1.0};
-float a1[2] = {-1.9777864837767636, 0.9780305084917958};
+float a1[2] = {-1.9755169509499406, 0.9756723888008961};
 // layer 2
 float b2[3] = {1.0, 2.0, 1.0};
-float a2[2] = {-1.9916564785864912, 0.9919022146194836};
+float a2[2] = {-1.9760761068598938, 0.976234765836575};
+// layer 3
+float b3[3] = {1.0, 2.0, 1.0};
+float a3[2] = {-1.9769347374604178, 0.9770984518844676};
+// layer 4
+float b4[3] = {1.0, 2.0, 1.0};
+float a4[2] = {-1.9781200578167435, 0.9782909725831894};
+// layer 5
+float b5[3] = {1.0, 2.0, 1.0};
+float a5[2] = {-1.9796753435851457, 0.9798561059146998};
+// layer 6
+float b6[3] = {1.0, 2.0, 1.0};
+float a6[2] = {-1.9816700246595487, 0.9818641035609497};
+// layer 7
+float b7[3] = {1.0, 2.0, 1.0};
+float a7[2] = {-1.9842223801296213, 0.9844346727688464};
+// layer 8
+float b8[3] = {1.0, 2.0, 1.0};
+float a8[2] = {-1.987561469595848, 0.9877996869762459};
+// layer 9
+float b9[3] = {1.0, 2.0, 1.0};
+float a9[2] = {-1.9922740434054746, 0.9925531720197439};
 // The vector of biquads
-vector<Biquad> biquads{ Biquad(b0, a0), Biquad(b1, a1), Biquad(b2, a2) };
+vector<Biquad> biquads{ Biquad(b0, a0), Biquad(b1, a1), Biquad(b2, a2), Biquad(b3, a3), Biquad(b4, a4), Biquad(b5, a5), Biquad(b6, a6), Biquad(b7, a7), Biquad(b8, a8), Biquad(b9, a9) };
 
 void dip_switch_config()
 {
@@ -192,6 +213,7 @@ void main_process()
 {
 
     float duty_f;
+    uint32_t duty, duty_ref, duty_max;
 
     // Configure dip switch and read current state
     dip_switch_config();
@@ -205,7 +227,8 @@ void main_process()
     // for recording.
     EVXAudioRecorder* recorder = new EVXAudioRecorder(SAMPLE_RATE, AUDIO_BUFFER_SIZE, I2S_BCK, I2S_WS, I2S_DATA_IN, CPU_NUMBER);
     
-    uint32_t duty_max = (uint32_t)powf(2.0f, LED_RESOLUTION);
+    duty_max = (uint32_t)(powf(2.0f, LED_RESOLUTION) * DUTY_MAX_RATIO);
+    duty_ref = (uint32_t)(duty_max / 2);
     
     // audio record start
     recorder->start();
@@ -236,7 +259,6 @@ void main_process()
               for (int i=0 ; i < 4 ; i++)
                 ledC->updateDuty(leds[i], 0);
               // Use the Blue LED as reference at half PWM resolution
-              uint32_t duty_ref = (uint32_t)(duty_max * DUTY_MAX_RATIO);
               ledC->updateDuty(leds[0], duty_ref);
               ledC->updateDuty(leds[2], duty_ref);
               state_current = state_new;
@@ -260,10 +282,49 @@ void main_process()
             {
               counter = 0;
               ledC->updateDuty(leds[led_counter], 0);
-              led_counter = (led_counter + led_step) % 4;
+
+              if (led_counter == 0)
+                led_counter = 2;  // red -> blue
+              else
+                led_counter = 0;  // blue -> red
             }
 
             ledC->updateDuty(leds[led_counter], counter);
+
+            counter++;
+
+            vTaskDelay(time_step_ms / portTICK_PERIOD_MS);
+
+            break;
+          case STATE_CALIBRATION_MAP:
+            if (state_new != state_current)
+            {
+              // do some initialization
+              time_step_ms = (CALIB_PERIOD_SEC * 1000) / duty_max;
+              counter = 0;
+              led_counter = 0;
+              state_current = state_new;
+              for (int i=0 ; i < 4 ; i++)
+                ledC->updateDuty(leds[i], 0);
+            }
+
+            if (counter == duty_max)
+            {
+              counter = 0;
+              ledC->updateDuty(leds[led_counter], 0);
+
+              if (led_counter == 0)
+                led_counter = 2;  // red -> blue
+              else
+                led_counter = 0;  // blue -> red
+            }
+
+            // The non-linear mapping
+            duty_f = map_pwm((float)counter / duty_max);
+            duty_f = camera_pre_correction(duty_f, 0);  // we use the red variant
+            duty = (uint32_t)(duty_f * duty_max);
+
+            ledC->updateDuty(leds[led_counter], duty);
 
             counter++;
 
@@ -279,7 +340,6 @@ void main_process()
               for (int i=0 ; i < 4 ; i++)
                 ledC->updateDuty(leds[i], 0);
               // Use the Blue LED as reference at half PWM resolution
-              uint32_t duty_ref = (uint32_t)(duty_max * DUTY_MAX_RATIO);
               ledC->updateDuty(leds[2], duty_ref);
               state_current = state_new;
             }
@@ -289,15 +349,20 @@ void main_process()
             for (int n=0; n<1; n++) {
 
               float filter_output = 0.;
-              for (int i=0; i<AUDIO_BUFFER_SIZE; i++) {
+              for (int i = 0 ; i < AUDIO_BUFFER_SIZE ; i++) {
                 // remove the mean using a notch filter
                 float sample = dc_rm.process(audio_data[AUDIO_CHANNELS*i + n]);
 
                 // process the power through low-pass filter
+                /*
                 filter_output =  sample * sample;
                 for (int i = 0 ; i < biquads.size() ; i++)
                   filter_output = biquads[i].process(filter_output);
+                */
+                filter_output += sample * sample;
               }
+
+              filter_output /= AUDIO_BUFFER_SIZE;
 
               // Apply the non-linear transformation
               float val_db = 10.0f * log10f(filter_output);
@@ -310,13 +375,13 @@ void main_process()
               duty_f = camera_pre_correction(duty_f, 2*n);
 
               // Detect if the signal is too large
-              if (duty_f > 0.99)
+              if (duty_f >= 1.)
                 ledC->updateDuty(leds[1], 400);
               else
                 ledC->updateDuty(leds[1], 0);
 
               // Set the LED duty cycle
-              uint32_t duty = (uint32_t)(duty_f * duty_max * DUTY_MAX_RATIO);
+              duty = (uint32_t)(duty_f * duty_max);
               ledC->updateDuty(leds[0], duty);
 
 #if ENABLE_MONITOR
@@ -378,7 +443,7 @@ void main_process()
               duty_f = camera_pre_correction(duty_f, 2*n);
 #endif
 
-              uint32_t duty = (uint32_t)(duty_f*duty_max);
+              uint32_t duty = (uint32_t)(duty_f * duty_max);
               ledC->updateDuty(leds[1], duty);
 
 #if ENABLE_MONITOR

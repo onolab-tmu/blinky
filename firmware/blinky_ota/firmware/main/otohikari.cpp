@@ -213,7 +213,15 @@ void main_process()
 {
 
     float duty_f;
-    uint32_t duty, duty_ref, duty_max;
+    uint32_t duty;
+
+    // The maximum duty cycle of blue and red was set so that
+    // there is no saturation in the video recording
+    // The reference is set to half of the maximum
+    vector<uint32_t> duty_max = { 1200, 4095, 250, 4095 };
+    vector<uint32_t> duty_ref(4);
+    for (int i = 0 ; i < duty_max.size() ; i++)
+      duty_ref[i] = duty_max[i] / 2;
 
     // Configure dip switch and read current state
     dip_switch_config();
@@ -226,9 +234,6 @@ void main_process()
     EVXLEDController* ledC = new EVXLEDController(LED_RESOLUTION, LED_FREQUENCY, leds);
     // for recording.
     EVXAudioRecorder* recorder = new EVXAudioRecorder(SAMPLE_RATE, AUDIO_BUFFER_SIZE, I2S_BCK, I2S_WS, I2S_DATA_IN, CPU_NUMBER);
-    
-    duty_max = (uint32_t)(powf(2.0f, LED_RESOLUTION) * DUTY_MAX_RATIO);
-    duty_ref = (uint32_t)(duty_max / 2);
     
     // audio record start
     recorder->start();
@@ -259,8 +264,8 @@ void main_process()
               for (int i=0 ; i < 4 ; i++)
                 ledC->updateDuty(leds[i], 0);
               // Use the Blue LED as reference at half PWM resolution
-              ledC->updateDuty(leds[0], duty_ref);
-              ledC->updateDuty(leds[2], duty_ref);
+              ledC->updateDuty(leds[0], duty_ref[0]);
+              ledC->updateDuty(leds[2], duty_ref[2]);
               state_current = state_new;
             }
             vTaskDelay(100 / portTICK_PERIOD_MS);
@@ -270,15 +275,15 @@ void main_process()
             if (state_new != state_current)
             {
               // do some initialization
-              time_step_ms = (CALIB_PERIOD_SEC * 1000) / duty_max;
               counter = 0;
               led_counter = 0;
               state_current = state_new;
+              time_step_ms = (CALIB_PERIOD_SEC * 1000) / duty_max[led_counter];
               for (int i=0 ; i < 4 ; i++)
                 ledC->updateDuty(leds[i], 0);
             }
 
-            if (counter == duty_max)
+            if (counter == duty_max[led_counter])
             {
               counter = 0;
               ledC->updateDuty(leds[led_counter], 0);
@@ -287,6 +292,8 @@ void main_process()
                 led_counter = 2;  // red -> blue
               else
                 led_counter = 0;  // blue -> red
+
+              time_step_ms = (CALIB_PERIOD_SEC * 1000) / duty_max[led_counter];
             }
 
             ledC->updateDuty(leds[led_counter], counter);
@@ -300,15 +307,15 @@ void main_process()
             if (state_new != state_current)
             {
               // do some initialization
-              time_step_ms = (CALIB_PERIOD_SEC * 1000) / duty_max;
               counter = 0;
               led_counter = 0;
               state_current = state_new;
+              time_step_ms = (CALIB_PERIOD_SEC * 1000) / duty_max[led_counter];
               for (int i=0 ; i < 4 ; i++)
                 ledC->updateDuty(leds[i], 0);
             }
 
-            if (counter == duty_max)
+            if (counter == duty_max[led_counter])
             {
               counter = 0;
               ledC->updateDuty(leds[led_counter], 0);
@@ -317,12 +324,14 @@ void main_process()
                 led_counter = 2;  // red -> blue
               else
                 led_counter = 0;  // blue -> red
+
+              time_step_ms = (CALIB_PERIOD_SEC * 1000) / duty_max[led_counter];
             }
 
             // The non-linear mapping
-            duty_f = map_pwm((float)counter / duty_max);
+            duty_f = map_pwm((float)counter / duty_max[led_counter]);
             duty_f = camera_pre_correction(duty_f, 0);  // we use the red variant
-            duty = (uint32_t)(duty_f * duty_max);
+            duty = (uint32_t)(duty_f * duty_max[led_counter]);
 
             ledC->updateDuty(leds[led_counter], duty);
 
@@ -340,7 +349,7 @@ void main_process()
               for (int i=0 ; i < 4 ; i++)
                 ledC->updateDuty(leds[i], 0);
               // Use the Blue LED as reference at half PWM resolution
-              ledC->updateDuty(leds[2], duty_ref);
+              ledC->updateDuty(leds[2], duty_ref[2]);
               state_current = state_new;
             }
 
@@ -381,7 +390,7 @@ void main_process()
                 ledC->updateDuty(leds[1], 0);
 
               // Set the LED duty cycle
-              duty = (uint32_t)(duty_f * duty_max);
+              duty = (uint32_t)(duty_f * duty_max[0]);
               ledC->updateDuty(leds[0], duty);
 
 #if ENABLE_MONITOR
@@ -443,7 +452,7 @@ void main_process()
               duty_f = camera_pre_correction(duty_f, 2*n);
 #endif
 
-              uint32_t duty = (uint32_t)(duty_f * duty_max);
+              uint32_t duty = (uint32_t)(duty_f * duty_max[1]);
               ledC->updateDuty(leds[1], duty);
 
 #if ENABLE_MONITOR

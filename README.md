@@ -52,11 +52,28 @@ In addition, there is a DIP switch with three channels connected to
 The switches connect to VCC and should thus be used with the pin configured as input with pull-down resistor.
 They are intended to be change between a number of preset configurations.
 
+### PCB
 
-Firmware
---------
+The design files for the PCB and enclosure can be found in the `PCB` folder.
 
-### Getting started
+Firmwares
+---------
+
+The folder `firmware` contains three
+
+### Blinky OTA Firmware
+
+This is our working firmware that we have used for the device in our experiments.
+It allows to do OTA updates and uses the DIP switch. This firmware reads sound
+samples from the left microphone, compute the power for frames of 4 ms and apply
+a non-linear transformation to map the value to the PWM range of the LED.
+A few of the modes are for calibration only and just sweep the PWM duty cycles of the LED.
+
+#### Quick Start
+
+This section explains how to get the firmware running in a few commands.
+For more detailed instructions, including over-the-air (OTA) updates, 
+see `firmware/blinky_ota/README.md`.
 
 1. Install the ESP-IDF by following the official instructions
     ([stable](https://docs.espressif.com/projects/esp-idf/en/stable/get-started/index.html))
@@ -67,36 +84,26 @@ Firmware
 
 2. Build the firmware.
 
-    ```
-    cd firmware/blinky_ota
+        cd firmware/blinky_ota/firmware
+        
+        # configure
+        #  - serial port
+        #  - device number
+        #  - wireless network
+        make menuconfig
+        
+        # compile and upload to device
+        make flash
 
-    # configure
-    #  - serial port
-    #  - device number
-    #  - wireless network
-    make menuconfig
+### Recorder Firmware
 
-    # compile and upload to device
-    make flash
-    ```
+This firmware turns the device into a wireless stereo microphone.
+The instructions to use this firmware are in `firmware/recorder/BlinkyRecorder_REAMDE_jp.pdf` (japanese only for now).
 
-### Over-the-air Firmware upload
+### Blank Firmware
 
-If the device was configured properly before compilation, it is possible
-to do over-the-air (OTA) firmware updates.
-The procedure is fairly simple.
-
-1. Install a wireless router with the network SSID programmed in the Blinky
-2. Start the server at `address`
-3. Turn the Blinky off and on again
-
-Then the Blinky should check the server for new firmware. If a new firmware is available, it will be downloaded and installed. The procedure will be accompanied by blinking of the LEDs.
-
-
-### Wireless Microphone
-
-The device can double as a wirelss microphone by changing the firmware.
-
+This firmware is a stripped down version of the regular Blinky firmware. Its role
+is to highlight how to read samples from one or both microphones and control the LEDs.
 
 Authors
 -------

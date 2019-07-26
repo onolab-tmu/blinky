@@ -14,6 +14,13 @@ procedure for OTA updates are described.
 1 Configuration of the firmware
 -------------------------------
 
+Install the ESP-IDF by following the official instructions
+([stable](https://docs.espressif.com/projects/esp-idf/en/stable/get-started/index.html))
+([latest](https://docs.espressif.com/projects/esp-idf/en/latest/get-started/index.html)).
+In case it the first time working with the ESP32, it is recommended to try
+out a few example projects to learn how to compile and upload firmware to
+the device.
+
 The initial configuration of the firmware is done by running `make menuconfig`
 
     cd firmware

@@ -1,4 +1,5 @@
 # -*- coding:utf-8 -*-
+from __future__ import print_function
 
 from argparse import ArgumentParser
 from socket import SO_REUSEADDR, SOCK_STREAM, error, socket, SOL_SOCKET, AF_INET
@@ -96,18 +97,3 @@ try:
 except KeyboardInterrupt:
     sys.stdout.write("\rfinish!")
     sys.exit()
-
-
-# animation = "|/-\\"
-# try:
-    # i=0
-    # while True:
-        # time.sleep(0.1)
-        # sys.stdout.write("\r" + animation[i % len(animation)])
-        # sys.stdout.flush()
-        # i+=1
-# except KeyboardInterrupt:
-    # go=False
-    # q.join()
-    # sys.stdout.write("\rfinish!")
-    # sys.exit()

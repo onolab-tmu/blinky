@@ -114,6 +114,8 @@ Authors
 License
 -------
 
-MIT License, see `LICENSE.
+MIT License for the software, see `LICENSE.
+
+CC-BY-SA 4.0 for the hardware.
 
 

@@ -4,17 +4,18 @@ import matplotlib.pyplot as plt
 
 fs_target = 30
 block_size = 64
-f_cut = 40  # Hz
+f_cut = 35  # Hz
 
 # 1) In-blinky filter characteristics
 fs_in = 16000
 fs_out = int(fs_in / block_size)
 cut_off = 2 * f_cut / fs_in
 attenuation_db = 40
-ftype = 'cheby2'
-N = 10
+#ftype = 'cheby2'
+ftype = 'bessel'
+N = 20
 
-sos = signal.iirfilter(N, cut_off, rs=40, btype='low',
+sos = signal.iirfilter(N, cut_off, rs=attenuation_db, btype='low',
                          analog=False, ftype=ftype, output='sos')
 
 # print coeff for export to Cpp

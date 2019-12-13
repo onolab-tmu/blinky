@@ -34,10 +34,10 @@ class ZoomCanvas(Canvas):
 
         super().__init__(width=self.win_size, height=self.win_size, *args, **kwargs)
 
-    def refresh(self, frame, row, col):
+    def update(self, frame, row, col):
 
         offset = (self.patch_size - 1) // 2
-        print(row - 
+
         cut_out = frame[
             row - offset : row + offset + 1, col - offset : col + offset + 1
         ].copy()
@@ -51,12 +51,36 @@ class ZoomCanvas(Canvas):
 
 
 class PixelTracker(object):
-    def __init__(self, row, col, buffer_size=100):
+    def __init__(
+        self,
+        row=None,
+        col=None,
+        buffer_size=100,
+        width=500,
+        height=400,
+        dpi=100,
+        master=None,
+    ):
 
+        self.fig = Figure(
+            figsize=(self.width / self.dpi, self.height / self.dpi), dpi=self.dpi
+        )
+        self.ax = self.fig.add_subplot(111)
+        self.plt_canvas = FigureCanvasTkAgg(self.fig, master=master)
+        self.plt_canvas.draw()
+
+        # Attributes for the pixel tracker
         self.row, self.col = row, col
         self.values = [0 for i in range(buffer_size)]
 
-    def push_back(self, frame):
+    def pack(self, *args, **kwargs):
+        self.plt_canvas.get_tk_widget().pack(*args, **kwargs)
+
+    def reset(self, row, col):
+        self.row = row
+        self.col = col
+
+    def update(self, frame):
 
         # Make the value grayscale if it isn't already
         if frame.ndim == 3:
@@ -70,6 +94,13 @@ class PixelTracker(object):
 
         self.values.pop(0)
         self.values.append(value)
+
+        # update the graph
+        self.ax.clear()
+        self.ax.plot(self.pixel_tracker.values)
+        self.ax.set_ylim([0, 255])
+        self.plt_canvas.draw()
+
 
 
 def zoom(frame, row, col, box_size, target_size):
@@ -110,11 +141,6 @@ class BlinkyViewer(object):
         self.vid_brightness = self.vid.brightness
         self.vid_exposure = self.vid.exposure
 
-        # pixel tracking
-        self.pixel_tracker = PixelTracker(
-            self.vid.height // 2, self.vid.width // 2, buffer_size=100
-        )
-
         # create canvas of the right size
         self.canvas = Canvas(window, width=self.vid.width, height=self.vid.height)
         self.canvas.bind("<Button-1>", self.mouse_callback)
@@ -147,17 +173,17 @@ class BlinkyViewer(object):
         self.canvas_figures.pack(anchor=CENTER, expand=True)
 
         # The pixel tracking figure
-        self.fig = Figure(figsize=(5, 4), dpi=100)
-        self.ax = self.fig.add_subplot(111)
-        self.plt_canvas = FigureCanvasTkAgg(self.fig, master=self.canvas_figures)
-        self.plt_canvas.draw()
-        self.plt_canvas.get_tk_widget().pack(side=LEFT, expand=True)
+        self.pixel_tracker = PixelTracker(
+            row=self.vid.height // 2,
+            col=self.vid.width // 2,
+            buffer_size=100,
+            master=self.canvas_figures,
+        )
+        self.pixel_tracker.pack(side=LEFT, expand=True)
 
         # The zoom
         self.canvas_zoom = ZoomCanvas(
-            self.zoom_patch_size,
-            self.zoom_gain,
-            self.canvas_figures,
+            self.zoom_patch_size, self.zoom_gain, self.canvas_figures,
         )
         self.canvas_zoom.pack(side=RIGHT, expand=True)
 
@@ -187,11 +213,7 @@ class BlinkyViewer(object):
 
         if ret:
 
-            self.pixel_tracker.push_back(frame)
-            self.ax.clear()
-            self.ax.plot(self.pixel_tracker.values)
-            self.ax.set_ylim([0, 255])
-            self.plt_canvas.draw()
+            self.pixel_tracker.update(frame)
 
             if self.checksat:
                 sat_pix = np.where(frame == 255)
@@ -212,7 +234,7 @@ class BlinkyViewer(object):
             self.canvas.create_image(0, 0, image=self.photo, anchor=NW)
 
             # create zoomed-in vignette
-            self.canvas_zoom.refresh(
+            self.canvas_zoom.update(
                 frame, self.pixel_tracker.row, self.pixel_tracker.col
             )
 
@@ -231,7 +253,7 @@ class BlinkyViewer(object):
             self.vid_exposure = scale_val
 
     def mouse_callback(self, event):
-        self.pixel_tracker = PixelTracker(event.y, event.x)
+        self.pixel_tracker.reset(event.y, event.x)
 
 
 def start_viewer(video_source):

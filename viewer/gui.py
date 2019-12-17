@@ -9,8 +9,10 @@ from tkinter import (
     NE,
     HORIZONTAL,
     E,
+    W,
     RIGHT,
     LEFT,
+    TOP,
 )
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -22,32 +24,72 @@ import numpy as np
 import cv2
 
 from .videocapture import VideoCapture
+from .video import ThreadedVideoStream
+
+
+def toggle(x: bool):
+    return x ^ True
 
 
 class ZoomCanvas(Canvas):
     def __init__(self, patch_size, zoom_gain, *args, **kwargs):
         self.win_size = patch_size * zoom_gain
         self.patch_size = patch_size
+        self.pixel_size = self.win_size / self.patch_size
         self.gain = zoom_gain
+
+        self._n_offset = (self.patch_size - 1) // 2
+        self.select_row = self._n_offset + 1
+        self.select_col = self._n_offset + 1
 
         self._vignette = None
 
         super().__init__(width=self.win_size, height=self.win_size, *args, **kwargs)
 
+        self.image = None
+
+    def on_click(self, event):
+
+        c, r = event.x, event.y
+
+        self.select_row = round(r / self.pixel_size - 0.5)
+        self.select_col = round(c / self.pixel_size - 0.5)
+
     def update(self, frame, row, col):
 
-        offset = (self.patch_size - 1) // 2
+        row -= self._n_offset
+        col -= self._n_offset
+
+        # Force vignette boundaries to be in the frame
+        if row < 0:
+            row = 0
+        elif row + self.patch_size > frame.shape[0]:
+            row = frame.shape[0] - self.patch_size
+
+        if col < 0:
+            col = 0
+        elif col + self.patch_size > frame.shape[1]:
+            col = frame.shape[1] - self.patch_size
 
         cut_out = frame[
-            row - offset : row + offset + 1, col - offset : col + offset + 1
+            row : row + self.patch_size, col : col + self.patch_size,
         ].copy()
 
+        # Resize the patch
         z = cv2.resize(
             cut_out, (self.win_size, self.win_size), interpolation=cv2.INTER_NEAREST
         )
 
+        # Draw a red rectangle around the selected pixel
+        p_s = (
+            round(self._n_offset * self.pixel_size),
+            round(self._n_offset * self.pixel_size),
+        )
+        p_e = (p_s[0] + round(self.pixel_size), p_s[1] + round(self.pixel_size))
+        z = cv2.rectangle(z, p_s, p_e, (255.0, 0.0, 0.0), 1)
+
         self._vignette = PIL.ImageTk.PhotoImage(image=PIL.Image.fromarray(z))
-        self.create_image(0, 0, image=self._vignette, anchor=CENTER)
+        self.create_image(0, 0, image=self._vignette, anchor="nw", tags="zoom_image")
 
 
 class PixelTracker(object):
@@ -62,6 +104,10 @@ class PixelTracker(object):
         master=None,
     ):
 
+        self.width = width
+        self.height = height
+        self.dpi = dpi
+
         self.fig = Figure(
             figsize=(self.width / self.dpi, self.height / self.dpi), dpi=self.dpi
         )
@@ -70,8 +116,8 @@ class PixelTracker(object):
         self.plt_canvas.draw()
 
         # Attributes for the pixel tracker
-        self.row, self.col = row, col
-        self.values = [0 for i in range(buffer_size)]
+        self.buffer_size = buffer_size
+        self.reset(row, col)
 
     def pack(self, *args, **kwargs):
         self.plt_canvas.get_tk_widget().pack(*args, **kwargs)
@@ -79,6 +125,7 @@ class PixelTracker(object):
     def reset(self, row, col):
         self.row = row
         self.col = col
+        self.values = [0 for i in range(self.buffer_size)]
 
     def update(self, frame):
 
@@ -92,33 +139,16 @@ class PixelTracker(object):
         else:
             raise ValueError("Bad input")
 
+        # add to the buffer
         self.values.pop(0)
         self.values.append(value)
 
         # update the graph
         self.ax.clear()
-        self.ax.plot(self.pixel_tracker.values)
+        self.ax.plot(np.arange(-len(self.values) + 1, 1), self.values)
+        self.ax.set_title(f"Selected pixel: col={self.col} row={self.row}")
         self.ax.set_ylim([0, 255])
         self.plt_canvas.draw()
-
-
-
-def zoom(frame, row, col, box_size, target_size):
-
-    offset = (box_size - 1) // 2
-    cut_out = frame[
-        row - offset : row + offset + 1, col - offset : col + offset + 1
-    ].copy()
-
-    vignette = cv2.resize(
-        cut_out, (target_size, target_size), interpolation=cv2.INTER_NEAREST
-    )
-
-    return vignette
-
-
-def toggle(x: bool):
-    return x ^ True
 
 
 # Now come the GUI part
@@ -141,11 +171,36 @@ class BlinkyViewer(object):
         self.vid_brightness = self.vid.brightness
         self.vid_exposure = self.vid.exposure
 
-        # create canvas of the right size
-        self.canvas = Canvas(window, width=self.vid.width, height=self.vid.height)
-        self.canvas.bind("<Button-1>", self.mouse_callback)
-        self.canvas.pack()
+        self.top_canvas = Canvas(window)
+        self.top_canvas.pack(expand=True)
 
+        # create canvas of the right size
+        self.canvas = Canvas(
+            self.top_canvas, width=self.vid.width, height=self.vid.height
+        )
+        self.canvas.pack(side=LEFT, expand=True)
+        self.canvas.bind("<Button-1>", self.mouse_callback)
+
+        self.canvas_figures = Canvas(self.top_canvas)
+        self.canvas_figures.pack(side=LEFT, expand=True)
+
+        # The pixel tracking figure
+        self.pixel_tracker = PixelTracker(
+            row=self.vid.height // 2,
+            col=self.vid.width // 2,
+            buffer_size=100,
+            master=self.canvas_figures,
+        )
+        self.pixel_tracker.pack(side=TOP, expand=True)
+
+        # The zoom
+        self.canvas_zoom = ZoomCanvas(
+            self.zoom_patch_size, self.zoom_gain, self.canvas_figures,
+        )
+        self.canvas_zoom.pack(side=TOP, expand=True)
+        self.canvas_zoom.bind("<Button-1>", self.zoom_callback)
+
+        # The Buttons
         self.canvas_buttons = Canvas(window)
         self.canvas_buttons.pack(anchor=CENTER, expand=True)
         self.btn_checksat = Button(
@@ -162,30 +217,6 @@ class BlinkyViewer(object):
             self.canvas_buttons, text="Log", width=20, command=self.toggle_convert_log
         )
         self.btn_convert_log.pack(side=LEFT, expand=True)
-
-        self.scale_brightness = Scale(window, from_=0, to=100, orient=HORIZONTAL)
-        self.scale_brightness.pack(anchor=CENTER, expand=True)
-
-        self.scale_exposure = Scale(window, from_=0, to=100, orient=HORIZONTAL)
-        self.scale_exposure.pack(anchor=CENTER, expand=True)
-
-        self.canvas_figures = Canvas(window)
-        self.canvas_figures.pack(anchor=CENTER, expand=True)
-
-        # The pixel tracking figure
-        self.pixel_tracker = PixelTracker(
-            row=self.vid.height // 2,
-            col=self.vid.width // 2,
-            buffer_size=100,
-            master=self.canvas_figures,
-        )
-        self.pixel_tracker.pack(side=LEFT, expand=True)
-
-        # The zoom
-        self.canvas_zoom = ZoomCanvas(
-            self.zoom_patch_size, self.zoom_gain, self.canvas_figures,
-        )
-        self.canvas_zoom.pack(side=RIGHT, expand=True)
 
         self.delay = 15  # milliseconds
         self.update()
@@ -205,8 +236,6 @@ class BlinkyViewer(object):
         self.convert_log = toggle(self.convert_log)
 
     def update(self):
-        self.change_brightness()
-        self.change_exposure()
 
         # Get a frame from the video source
         ret, frame = self.vid.get_frame()
@@ -240,20 +269,22 @@ class BlinkyViewer(object):
 
         self.window.after(self.delay, self.update)
 
-    def change_brightness(self):
-        scale_val = self.scale_brightness.get() / 100
-        if self.vid_brightness != scale_val:
-            self.vid.brightness = scale_val
-            self.vid_brightness = scale_val
-
-    def change_exposure(self):
-        scale_val = self.scale_exposure.get() / 100
-        if self.vid_exposure != scale_val:
-            self.vid.exposure = scale_val
-            self.vid_exposure = scale_val
-
     def mouse_callback(self, event):
         self.pixel_tracker.reset(event.y, event.x)
+
+    def zoom_callback(self, event):
+        self.canvas_zoom.on_click(event)
+        new_row = (
+            self.pixel_tracker.row
+            + self.canvas_zoom.select_row
+            - self.canvas_zoom._n_offset
+        )
+        new_col = (
+            self.pixel_tracker.col
+            + self.canvas_zoom.select_col
+            - self.canvas_zoom._n_offset
+        )
+        self.pixel_tracker.reset(new_row, new_col)
 
 
 def start_viewer(video_source):

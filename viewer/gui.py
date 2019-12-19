@@ -33,10 +33,14 @@ import cv2
 
 from .videocapture import VideoCapture
 from .video import ThreadedVideoStream
-from .processors import ReadSpeedMonitor
+from .processors import ReadSpeedMonitor, BoxCatcher
+from .utils import pixel_to_str
+from .io import BlinkyFile
 
 
 PREVIEW_LABEL = "Preview"
+PROCESS_LABEL = "Process"
+STOP_LABEL = "Stop"
 
 
 def toggle(x: bool):
@@ -62,6 +66,10 @@ class PixelList(Canvas):
         if label not in self.pixels:
             self.pixels[label] = pixel
             self.list.insert(END, label)
+
+    def get(self):
+        """ Return the list of pixels """
+        return list(self.pixels.values())
 
     @property
     def curselection(self):
@@ -346,7 +354,9 @@ class BlinkyViewer(object):
         self.canvas_proc.pack(anchor=CENTER, expand=True)
 
         self.output_filename = "blinky_viewer_output.txt"
-        self.label_file = Label(self.canvas_proc, text=f"Output file: {self.output_filename}")
+        self.label_file = Label(
+            self.canvas_proc, text=f"Output file: {self.output_filename}"
+        )
         self.label_file.pack(side=LEFT, expand=True)
 
         """
@@ -363,7 +373,7 @@ class BlinkyViewer(object):
         self.label_boxsize = Label(self.canvas_proc, text="Box size:")
         self.label_boxsize.pack(side=LEFT, expand=True)
 
-        self.entry_boxsize = Entry(self.canvas_proc, width=10)
+        self.entry_boxsize = Entry(self.canvas_proc, width=10, text=1)
         self.entry_boxsize.pack(side=LEFT, expand=True)
 
         self.btn_process = Button(
@@ -518,7 +528,42 @@ class BlinkyViewer(object):
         self.log(f"Dropped pixel at {pixel_to_str(self.canvas_zoom.selected)}")
 
     def process_callback(self):
-        print(f"boxsize: {self.entry_boxsize.get()}")
+
+        if self.btn_process.cget("text") == PROCESS_LABEL:
+
+            self.log("Start recording")
+
+            # If the video is from a file, we restart
+            if not isinstance(self.video_source, int):
+                self.vid.stop()
+
+            if self.processor is not None:
+                self.processor.stop()
+
+            bbox = int(self.entry_boxsize.get())
+            self.processor = BoxCatcher(self.pixel_list.get(), [bbox, bbox], monitor=True)
+
+            # If the video is from a file, we restart
+            if not isinstance(self.video_source, int):
+                self.vid = ThreadedVideoStream(self.video_source)
+
+            self.btn_process.config(text=STOP_LABEL)
+
+        elif self.btn_process.cget("text") == STOP_LABEL:
+
+            self.log("Stop recording")
+
+            self.btn_process.config(text=PROCESS_LABEL)
+
+            if isinstance(self.processor, BoxCatcher):
+                self.processor.stop()
+                new_file = BlinkyFile(
+                    self.processor.pixels, self.processor.data, self.vid.fps
+                )
+                new_file.dump("test.data")
+
+        else:
+            raise ValueError("Invalid button state")
 
     def mouse_callback(self, event):
         col, row = event.x, event.y
@@ -542,6 +587,7 @@ class BlinkyViewer(object):
         self.vid.stop()
         if self.processor is not None:
             self.processor.stop()
+
         self.window.destroy()
 
 

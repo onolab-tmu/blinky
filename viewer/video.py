@@ -79,7 +79,7 @@ class ThreadedVideoStream(object):
 
     @property
     def available(self):
-        return self.queue.qsize() > 0
+        return self.is_streaming and self.queue.qsize() > 0
 
     @property
     def width(self):

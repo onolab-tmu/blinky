@@ -224,32 +224,25 @@ class BoxCatcher(ProcessorBase):
         The location of the pixels to collect in the image
     box_size: list  or tuple of two int
         The width and height of the bounding box to use for averaging
-    agg: func
-        The aggregation function to use on the box (default numpy.mean),
-        it needs to be a ufunc with support for `keepdims` and `axis` options
     """
 
-    def __init__(self, pixels, box_size, output_file=None, agg=None, monitor=False):
+    def __init__(self, pixels, box_size, monitor=False):
 
         # call parent method
         ProcessorBase.__init__(self, monitor=monitor)
 
         # set the attributes
         self.pixels = pixels
-        self.values = []
+        self.data = []
         self.box_size = box_size
-        if agg is None:
-            self.agg = np.mean
-        else:
-            self.agg = agg
 
         # precompute the slices for each pixel
-        off_h = self.box_size[0] // 2
-        off_v = self.box_size[1] // 2
+        off_w = self.box_size[0] // 2
+        off_h = self.box_size[1] // 2
         self.ranges = [
             [
-                slice(loc[0] - off_v, loc[0] + off_v + 1),
-                slice(loc[1] - off_h, loc[1] + off_h + 1),
+                slice(loc[0] - off_w, loc[0] - off_w + self.box_size[0]),  # columns
+                slice(loc[1] - off_h, loc[1] - off_h + self.box_size[1]),  # row
             ]
             for loc in self.pixels
         ]
@@ -263,23 +256,10 @@ class BoxCatcher(ProcessorBase):
         frames: array_like (..., width, height, n_colors)
             The stack of frames
         """
-
-        extra_dims = frames.shape[:-3]  # in case the array has more than 3D
-
-        vals = [
-            frames[..., rx, ry, :].reshape(extra_dims + (-1, frames.shape[-1]))
-            for rx, ry in self.ranges
-        ]
-
-        self.values.append(vals)
+        self.data.append([frames[r_h, r_w] for r_w, r_h in self.ranges])
 
     def __finalize__(self):
-        pass
-
-    def extract(self):
         """
-        Format the values captured into an (n_pixels,...,n_colors) shaped array
+        Consolidate collected data in numpy ndarray with shape (n_frames, n_pixels, box_height, box_width, 
         """
-        agg_val = self.agg(self.values, axis=-2)
-        agg_val = agg_val.reshape((-1,) + agg_val.shape[-2:])
-        return agg_val
+        self.data = np.array(self.data)

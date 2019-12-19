@@ -14,15 +14,16 @@ import msgpack
 import numpy as np
 from datetime import datetime
 from .version import __version__
+from .utils import pixel_to_str
 
 
 def encoder(obj, chain=None):
-    """ Custom encoder to store numpy.ndarray in messagepack format """
+    """ Custom encoder to store numpy.ndarray in MessagePack format """
 
     if isinstance(obj, np.ndarray):
 
         # Make sure this is not a structured array type
-        assert obj.dtype.kind != "V"
+        assert obj.dtype.kind != "V", "Unsupported non-numeric type"
 
         return {
             "__nd__": True,  # indicate this is a numpy ndarray
@@ -35,6 +36,7 @@ def encoder(obj, chain=None):
 
 
 def decoder(obj, chain=None):
+    """ Custom decoder to recover numpy.ndarray saved in MessagePack format """
 
     try:
         if "__nd__" in obj:
@@ -74,5 +76,38 @@ class BlinkyFile(object):
         """ Load a BlinkyFile object from MessagePack format """
         with open(filename, "rb") as f:
             content = msgpack.unpack(f, object_hook=decoder, raw=False)
-            obj = cls(**content)
-        return obj
+        return cls(**content)
+
+def file_preview():
+    """
+    Preview a Blinky file
+    """
+    import matplotlib.pyplot as plt
+    import argparse
+    parser = argparse.ArgumentParser(description="Preview a Blinky file")
+    parser.add_argument("filename", type=str, help="File name")
+    args = parser.parse_args()
+
+    bfile = BlinkyFile.load(args.filename)
+    data = bfile.data.astype(np.float)
+
+    if len(data.shape) == 5:
+        ## This is a color file, we will average the colors
+        data = np.mean(data, axis=-1)
+
+    # Now, for the purpose of preview, we average the boxes
+    data = np.mean(data, axis=(-2, -1))
+
+    # Make the time axis
+    time = np.arange(data.shape[0]) / bfile.fps
+
+    # Make the plot
+    fig, ax = plt.subplots(1, 1)
+    ax.plot(time, data)
+    ax.legend([pixel_to_str(p) for p in bfile.locations])
+
+    plt.show()
+
+
+if __name__ == "__main__":
+    file_preview()

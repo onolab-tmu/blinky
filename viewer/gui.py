@@ -21,7 +21,7 @@ from tkinter import (
     DISABLED,
 )
 from tkinter.scrolledtext import ScrolledText
-from tkinter.filedialog import Open
+from tkinter.filedialog import askopenfilename, asksaveasfilename
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
@@ -277,7 +277,7 @@ class PixelTracker(object):
 
     def mark(self, frame):
         """ Mark the locations of pixels with circles on a frame """
-        mark_radius = 3
+        mark_radius = 4
         mark_color_preview = (0, 0, 255)
         mark_color_selected = (255, 0, 0)
         for lbl, p in self.pixels.items():
@@ -285,7 +285,7 @@ class PixelTracker(object):
                 c = mark_color_preview
             else:
                 c = mark_color_selected
-            frame = cv2.circle(frame, p["loc"], mark_radius, c, -1)
+            frame = cv2.circle(frame, p["loc"], mark_radius, c, 2)
 
         return frame
 
@@ -359,21 +359,17 @@ class BlinkyViewer(object):
         )
         self.label_file.pack(side=LEFT, expand=True)
 
-        """
         self.btn_file_dialog = Button(
-            self.canvas_proc, text="...", width=3, command=self.choose_file_callback
+                self.canvas_proc, text="...", width=3, command=self.choose_file_callback
         )
         self.btn_file_dialog.pack(side=LEFT, expand=True)
 
-        def browsefunc():
-    filename = filedialog.askopenfilename()
-    pathlabel.config(text=filename)
-        """
 
         self.label_boxsize = Label(self.canvas_proc, text="Box size:")
         self.label_boxsize.pack(side=LEFT, expand=True)
 
-        self.entry_boxsize = Entry(self.canvas_proc, width=10, text=1)
+        self.entry_boxsize = Entry(self.canvas_proc, width=10)
+        self.entry_boxsize.insert(0, "1")
         self.entry_boxsize.pack(side=LEFT, expand=True)
 
         self.btn_process = Button(
@@ -527,27 +523,41 @@ class BlinkyViewer(object):
         self.pixel_list.curdelete()
         self.log(f"Dropped pixel at {pixel_to_str(self.canvas_zoom.selected)}")
 
+    def choose_file_callback(self):
+        tmp_filename = asksaveasfilename()
+        if tmp_filename != "":
+            self.output_filename = tmp_filename
+            self.label_file.config(text=f"Output file: {self.output_filename}")
+
     def process_callback(self):
 
         if self.btn_process.cget("text") == PROCESS_LABEL:
 
-            self.log("Start recording")
+            bbox = self.entry_boxsize.get()
 
-            # If the video is from a file, we restart
-            if not isinstance(self.video_source, int):
-                self.vid.stop()
+            if not bbox.isdigit():
+                self.log("The box size should be a number")
 
-            if self.processor is not None:
-                self.processor.stop()
+            else:
 
-            bbox = int(self.entry_boxsize.get())
-            self.processor = BoxCatcher(self.pixel_list.get(), [bbox, bbox], monitor=True)
+                bbox = int(bbox)
 
-            # If the video is from a file, we restart
-            if not isinstance(self.video_source, int):
-                self.vid = ThreadedVideoStream(self.video_source)
+                self.log("Start recording")
 
-            self.btn_process.config(text=STOP_LABEL)
+                # If the video is from a file, we restart
+                if not isinstance(self.video_source, int):
+                    self.vid.stop()
+
+                if self.processor is not None:
+                    self.processor.stop()
+
+                self.processor = BoxCatcher(self.pixel_list.get(), [bbox, bbox], monitor=True)
+
+                # If the video is from a file, we restart
+                if not isinstance(self.video_source, int):
+                    self.vid = ThreadedVideoStream(self.video_source)
+
+                self.btn_process.config(text=STOP_LABEL)
 
         elif self.btn_process.cget("text") == STOP_LABEL:
 
@@ -560,7 +570,7 @@ class BlinkyViewer(object):
                 new_file = BlinkyFile(
                     self.processor.pixels, self.processor.data, self.vid.fps
                 )
-                new_file.dump("test.data")
+                new_file.dump(self.output_filename)
 
         else:
             raise ValueError("Invalid button state")

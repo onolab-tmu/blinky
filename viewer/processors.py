@@ -256,7 +256,7 @@ class BoxCatcher(ProcessorBase):
         frames: array_like (..., width, height, n_colors)
             The stack of frames
         """
-        self.data.append([frames[r_h, r_w] for r_w, r_h in self.ranges])
+        self.data.append([frames[r_h, r_w].copy() for r_w, r_h in self.ranges])
 
     def __finalize__(self):
         """

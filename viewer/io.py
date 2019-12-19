@@ -57,6 +57,13 @@ class BlinkyFile(object):
     def __init__(self, locations, data, fps, version=None, creation=None, **metadata):
         self.locations = locations
         self.data = data
+
+        assert len(self.locations) == self.data.shape[1], (
+            "Error when creating the Blinky file object. "
+            "The number of locations should correspond to the "
+            "number of signals recorded."
+        )
+
         self.fps = fps
         self.version = version if version is not None else __version__
         self.creation = (
@@ -78,12 +85,14 @@ class BlinkyFile(object):
             content = msgpack.unpack(f, object_hook=decoder, raw=False)
         return cls(**content)
 
+
 def file_preview():
     """
     Preview a Blinky file
     """
     import matplotlib.pyplot as plt
     import argparse
+
     parser = argparse.ArgumentParser(description="Preview a Blinky file")
     parser.add_argument("filename", type=str, help="File name")
     args = parser.parse_args()
@@ -104,6 +113,9 @@ def file_preview():
     # Make the plot
     fig, ax = plt.subplots(1, 1)
     ax.plot(time, data)
+    ax.set_xlabel("Time [s]")
+    ax.set_ylabel("Pixel value")
+    ax.set_title(f"File creation {bfile.creation}")
     ax.legend([pixel_to_str(p) for p in bfile.locations])
 
     plt.show()

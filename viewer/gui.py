@@ -1,19 +1,27 @@
 import tkinter
 from tkinter import (
-    Label,
     Button,
     Canvas,
+    Listbox,
     Scale,
+    Label,
+    Entry,
     NW,
     CENTER,
     NE,
     HORIZONTAL,
+    N,
     E,
     W,
     RIGHT,
     LEFT,
+    BOTTOM,
     TOP,
+    END,
+    DISABLED,
 )
+from tkinter.scrolledtext import ScrolledText
+from tkinter.filedialog import Open
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
@@ -25,22 +33,64 @@ import cv2
 
 from .videocapture import VideoCapture
 from .video import ThreadedVideoStream
+from .processors import ReadSpeedMonitor
+
+
+PREVIEW_LABEL = "Preview"
 
 
 def toggle(x: bool):
     return x ^ True
 
 
+def pixel_to_str(pixel):
+    return f"({pixel[0]}, {pixel[1]})"
+
+
+class PixelList(Canvas):
+    def __init__(self, window, list_width=20, list_height=10, *args, **kwargs):
+
+        super().__init__(window, *args, **kwargs)
+        self.pixels = {}
+
+        self.list = Listbox(self, width=list_width, height=list_height)
+        self.list.pack()
+
+    def add(self, pixel):
+        """ Add a pixel to the list """
+        label = pixel_to_str(pixel)
+        if label not in self.pixels:
+            self.pixels[label] = pixel
+            self.list.insert(END, label)
+
+    @property
+    def curselection(self):
+        """ Return label of selected pixel """
+        return [self.list.get(p) for p in self.list.curselection()]
+
+    def curdelete(self):
+        """ Delete currently selected item """
+        cur_selected = self.list.curselection()
+        for p in cur_selected:
+            p_lbl = self.list.get(p)  # get label
+            self.pixels.pop(p_lbl)  # remove from pixel list
+            self.list.delete(p)  # delete from listbox
+
+
 class ZoomCanvas(Canvas):
-    def __init__(self, patch_size, zoom_gain, *args, **kwargs):
-        self.win_size = patch_size * zoom_gain
+    def __init__(self, patch_size, win_size, frame_shape, *args, **kwargs):
+        self.win_size = win_size
         self.patch_size = patch_size
         self.pixel_size = self.win_size / self.patch_size
-        self.gain = zoom_gain
+        self.frame_shape = frame_shape
 
         self._n_offset = (self.patch_size - 1) // 2
         self.select_row = self._n_offset + 1
         self.select_col = self._n_offset + 1
+
+        # initialize origin in upper left corner
+        self.origin = (self._n_offset, self._n_offset)
+        self.selected_local = (0, 0)
 
         self._vignette = None
 
@@ -48,28 +98,47 @@ class ZoomCanvas(Canvas):
 
         self.image = None
 
+    @property
+    def selected(self):
+        return (
+            self.origin[0] + self.selected_local[0],
+            self.origin[1] + self.selected_local[1],
+        )
+
     def on_click(self, event):
 
         c, r = event.x, event.y
 
-        self.select_row = round(r / self.pixel_size - 0.5)
-        self.select_col = round(c / self.pixel_size - 0.5)
+        self.selected_local = (
+            round(c / self.pixel_size - 0.5) - self._n_offset,
+            round(r / self.pixel_size - 0.5) - self._n_offset,
+        )
 
-    def update(self, frame, row, col):
+    def set_origin(self, pixel):
 
-        row -= self._n_offset
-        col -= self._n_offset
+        self.origin = pixel
+        self._sanitize_origin()
+
+        # reset local selection upon re-framing
+        self.selected_local = (0, 0)
+
+    def _sanitize_origin(self):
+
+        tmp = list(self.origin)
 
         # Force vignette boundaries to be in the frame
-        if row < 0:
-            row = 0
-        elif row + self.patch_size > frame.shape[0]:
-            row = frame.shape[0] - self.patch_size
+        for i in [0, 1]:
+            if tmp[i] - self._n_offset < 0:
+                tmp[i] = self._n_offset
+            elif tmp[i] - self._n_offset + self.patch_size > self.frame_shape[1 - i]:
+                tmp[i] = self.frame_shape[1 - i] - self.patch_size + self._n_offset
 
-        if col < 0:
-            col = 0
-        elif col + self.patch_size > frame.shape[1]:
-            col = frame.shape[1] - self.patch_size
+        self.origin = tuple(tmp)
+
+    def update(self, frame):
+
+        col = self.origin[0] - self._n_offset
+        row = self.origin[1] - self._n_offset
 
         cut_out = frame[
             row : row + self.patch_size, col : col + self.patch_size,
@@ -82,8 +151,8 @@ class ZoomCanvas(Canvas):
 
         # Draw a red rectangle around the selected pixel
         p_s = (
-            round(self._n_offset * self.pixel_size),
-            round(self._n_offset * self.pixel_size),
+            round((self.selected_local[0] + self._n_offset) * self.pixel_size),
+            round((self.selected_local[1] + self._n_offset) * self.pixel_size),
         )
         p_e = (p_s[0] + round(self.pixel_size), p_s[1] + round(self.pixel_size))
         z = cv2.rectangle(z, p_s, p_e, (255.0, 0.0, 0.0), 1)
@@ -91,12 +160,26 @@ class ZoomCanvas(Canvas):
         self._vignette = PIL.ImageTk.PhotoImage(image=PIL.Image.fromarray(z))
         self.create_image(0, 0, image=self._vignette, anchor="nw", tags="zoom_image")
 
+    def mark(self, frame):
+        """ Mark location of zoom in original frame """
+        c = self.origin[0] - self._n_offset
+        r = self.origin[1] - self._n_offset
+        frame = cv2.rectangle(
+            frame,
+            (c, r),
+            (c + self.patch_size, r + self.patch_size),
+            (255.0, 0.0, 0.0),
+            1,
+        )
+
+        return frame
+
 
 class PixelTracker(object):
     def __init__(
         self,
-        row=None,
-        col=None,
+        row=0,
+        col=0,
         buffer_size=100,
         width=500,
         height=400,
@@ -111,6 +194,7 @@ class PixelTracker(object):
         self.fig = Figure(
             figsize=(self.width / self.dpi, self.height / self.dpi), dpi=self.dpi
         )
+        self.fig.set_tight_layout(True)
         self.ax = self.fig.add_subplot(111)
         self.plt_canvas = FigureCanvasTkAgg(self.fig, master=master)
         self.plt_canvas.draw()
@@ -118,6 +202,26 @@ class PixelTracker(object):
         # Attributes for the pixel tracker
         self.buffer_size = buffer_size
         self.reset(row, col)
+
+        self.pixels = {}
+
+    def add(self, pixel, label=None):
+        if label is None:
+            label = pixel_to_str(pixel)
+
+        # If this is not a preview and the label is already
+        # in the list, we abort
+        if label != PREVIEW_LABEL and label in self.pixels:
+            return
+
+        # Add the pixel
+        self.pixels[label] = {
+            "loc": pixel,
+            "values": [0 for i in range(self.buffer_size)],
+        }
+
+    def remove(self, pixel_str):
+        self.pixels.pop(pixel_str)
 
     def pack(self, *args, **kwargs):
         self.plt_canvas.get_tk_widget().pack(*args, **kwargs)
@@ -127,34 +231,67 @@ class PixelTracker(object):
         self.col = col
         self.values = [0 for i in range(self.buffer_size)]
 
-    def update(self, frame):
+    def push(self, frame):
 
-        # Make the value grayscale if it isn't already
-        if frame.ndim == 3:
-            value = cv2.cvtColor(
-                frame[self.row, self.col, None, None, :], cv2.COLOR_RGB2GRAY
-            )[0, 0]
-        elif frame.ndim == 2:
-            value = frame[self.row, self.col]
-        else:
-            raise ValueError("Bad input")
+        for lbl, pxl in self.pixels.items():
 
-        # add to the buffer
-        self.values.pop(0)
-        self.values.append(value)
+            col, row = pxl["loc"]
+
+            # Make the value grayscale if it isn't already
+            if frame.ndim == 3:
+                value = cv2.cvtColor(
+                    frame[row, col, None, None, :], cv2.COLOR_RGB2GRAY
+                )[0, 0]
+            elif frame.ndim == 2:
+                value = frame[row, col]
+            else:
+                raise ValueError("Bad input")
+
+            # add to the buffer
+            pxl["values"].pop(0)
+            pxl["values"].append(value)
+
+    def update(self):
 
         # update the graph
         self.ax.clear()
-        self.ax.plot(np.arange(-len(self.values) + 1, 1), self.values)
-        self.ax.set_title(f"Selected pixel: col={self.col} row={self.row}")
+
+        for lbl, pxl in self.pixels.items():
+            self.ax.plot(
+                np.arange(-len(pxl["values"]) + 1, 1), pxl["values"], label=lbl
+            )
+
+        self.ax.set_title(f"Selected Pixels Time Series")
+        if len(self.pixels) > 0:
+            self.ax.legend(loc="lower left")
         self.ax.set_ylim([0, 255])
         self.plt_canvas.draw()
+
+    def mark(self, frame):
+        """ Mark the locations of pixels with circles on a frame """
+        mark_radius = 3
+        mark_color_preview = (0, 0, 255)
+        mark_color_selected = (255, 0, 0)
+        for lbl, p in self.pixels.items():
+            if lbl == PREVIEW_LABEL:
+                c = mark_color_preview
+            else:
+                c = mark_color_selected
+            frame = cv2.circle(frame, p["loc"], mark_radius, c, -1)
+
+        return frame
 
 
 # Now come the GUI part
 class BlinkyViewer(object):
     def __init__(self, window, video_source=0):
         self.window = window
+        self.window.protocol("WM_DELETE_WINDOW", self.on_closing_callback)
+        # overload "Exit" function for Menu file -> quit
+        self.window.createcommand("exit", self.on_closing_callback)
+
+        # window update delay
+        self.delay = 33  # milliseconds
 
         # control
         self.checksat = False
@@ -162,46 +299,32 @@ class BlinkyViewer(object):
         self.convert_log = False
 
         # zoom size
-        self.zoom_patch_size = 51
-        self.zoom_gain = 10
+        self.zoom_patch_size = 31
 
         # open video feed
-        self.vid = VideoCapture(video_source)
+        self.video_source = video_source
+        self.processor = ReadSpeedMonitor(monitor=True)
+        self.vid = ThreadedVideoStream(self.video_source)
+        print("Video FPS:", self.vid.fps)
 
         self.vid_brightness = self.vid.brightness
         self.vid_exposure = self.vid.exposure
 
-        self.top_canvas = Canvas(window)
-        self.top_canvas.pack(expand=True)
+        # THE LEFT PANEL #
+        ##################
+
+        self.left_canvas = Canvas(window)
+        self.left_canvas.pack(side=LEFT, expand=True)
 
         # create canvas of the right size
         self.canvas = Canvas(
-            self.top_canvas, width=self.vid.width, height=self.vid.height
+            self.left_canvas, width=self.vid.width, height=self.vid.height
         )
-        self.canvas.pack(side=LEFT, expand=True)
+        self.canvas.pack(anchor=N, expand=True)
         self.canvas.bind("<Button-1>", self.mouse_callback)
 
-        self.canvas_figures = Canvas(self.top_canvas)
-        self.canvas_figures.pack(side=LEFT, expand=True)
-
-        # The pixel tracking figure
-        self.pixel_tracker = PixelTracker(
-            row=self.vid.height // 2,
-            col=self.vid.width // 2,
-            buffer_size=100,
-            master=self.canvas_figures,
-        )
-        self.pixel_tracker.pack(side=TOP, expand=True)
-
-        # The zoom
-        self.canvas_zoom = ZoomCanvas(
-            self.zoom_patch_size, self.zoom_gain, self.canvas_figures,
-        )
-        self.canvas_zoom.pack(side=TOP, expand=True)
-        self.canvas_zoom.bind("<Button-1>", self.zoom_callback)
-
         # The Buttons
-        self.canvas_buttons = Canvas(window)
+        self.canvas_buttons = Canvas(self.left_canvas)
         self.canvas_buttons.pack(anchor=CENTER, expand=True)
         self.btn_checksat = Button(
             self.canvas_buttons, text="Sat", width=20, command=self.toggle_checksat
@@ -218,13 +341,110 @@ class BlinkyViewer(object):
         )
         self.btn_convert_log.pack(side=LEFT, expand=True)
 
-        self.delay = 15  # milliseconds
+        # The processing part
+        self.canvas_proc = Canvas(self.left_canvas)
+        self.canvas_proc.pack(anchor=CENTER, expand=True)
+
+        self.output_filename = "blinky_viewer_output.txt"
+        self.label_file = Label(self.canvas_proc, text=f"Output file: {self.output_filename}")
+        self.label_file.pack(side=LEFT, expand=True)
+
+        """
+        self.btn_file_dialog = Button(
+            self.canvas_proc, text="...", width=3, command=self.choose_file_callback
+        )
+        self.btn_file_dialog.pack(side=LEFT, expand=True)
+
+        def browsefunc():
+    filename = filedialog.askopenfilename()
+    pathlabel.config(text=filename)
+        """
+
+        self.label_boxsize = Label(self.canvas_proc, text="Box size:")
+        self.label_boxsize.pack(side=LEFT, expand=True)
+
+        self.entry_boxsize = Entry(self.canvas_proc, width=10)
+        self.entry_boxsize.pack(side=LEFT, expand=True)
+
+        self.btn_process = Button(
+            self.canvas_proc, text="Process", width=20, command=self.process_callback
+        )
+        self.btn_process.pack(side=LEFT, expand=True)
+
+        # THE RIGHT PANEL #
+        ###################
+
+        self.right_canvas = Canvas(window)
+        self.right_canvas.pack(side=LEFT, expand=True)
+
+        # The pixel tracking figure
+        self.pixel_tracker = PixelTracker(
+            row=self.vid.height // 2,
+            col=self.vid.width // 2,
+            width=self.vid.height // 2,
+            height=self.vid.height // 2,
+            buffer_size=100,
+            master=self.right_canvas,
+        )
+        self.pixel_tracker.pack(anchor=CENTER, expand=True)
+
+        # The zoom
+        self.canvas_zoom = ZoomCanvas(
+            self.zoom_patch_size,
+            self.vid.height // 2,
+            self.vid.shape,
+            self.right_canvas,
+        )
+        self.canvas_zoom.pack(anchor=CENTER, expand=True)
+        self.canvas_zoom.bind("<Button-1>", self.zoom_callback)
+
+        # Notify pixel tracker of initial zoom selection
+        self.pixel_tracker.add(self.canvas_zoom.selected, label=PREVIEW_LABEL)
+
+        # Buttons to add and remove pixels
+        self.canvas_pix_btn = Canvas(self.right_canvas)
+        self.canvas_pix_btn.pack(anchor=CENTER, expand=True)
+
+        self.btn_add_pixel = Button(
+            self.canvas_pix_btn,
+            text="Add Pixel",
+            width=20,
+            command=self.add_pixel_callback,
+        )
+        self.btn_add_pixel.pack(side=LEFT, expand=True)
+
+        self.btn_drop_pixel = Button(
+            self.canvas_pix_btn,
+            text="Drop Pixel",
+            width=20,
+            command=self.drop_pixel_callback,
+        )
+        self.btn_drop_pixel.pack(side=LEFT, expand=True)
+
+        # The selected pixels list
+        self.pixel_list = PixelList(self.right_canvas, list_width=40, list_height=10)
+        self.pixel_list.pack(anchor=CENTER, expand=True)
+
+        # The Console
+        self.console = ScrolledText(
+            self.right_canvas, width=50, height=10, state=DISABLED
+        )
+        self.console.pack(anchor=CENTER, expand=True)
+
+        self.log("Welcome to BlinkyViewer")
+
         self.update()
 
         # Populate the window
-        window.title("Blinky Viewer")
+        window.title("BlinkyViewer")
 
         self.window.mainloop()
+
+    def log(self, message):
+        self.console.configure(state="normal")
+        self.console.insert("end", "\n" + message)
+        self.console.configure(state="disabled")
+        self.console.see("end")
 
     def toggle_checksat(self):
         self.checksat = toggle(self.checksat)
@@ -237,12 +457,26 @@ class BlinkyViewer(object):
 
     def update(self):
 
+        frame = None
+
         # Get a frame from the video source
-        ret, frame = self.vid.get_frame()
+        while self.vid.available:
+            f = self.vid.read(block=False)
 
-        if ret:
+            if f is None:
+                break
 
-            self.pixel_tracker.update(frame)
+            if frame is None:
+                frame = f.copy()
+
+            if self.processor is not None:
+                self.processor.process(f)
+
+            self.pixel_tracker.push(f)
+
+        if frame is not None:
+
+            self.pixel_tracker.update()
 
             if self.checksat:
                 sat_pix = np.where(frame == 255)
@@ -259,32 +493,56 @@ class BlinkyViewer(object):
                 tmp = np.log2(tmp + 1)
                 frame = (tmp * 255 / np.max(tmp)).astype(np.uint8)
 
+            # create zoomed-in vignette
+            self.canvas_zoom.update(frame)
+
+            # indicate the location of selected pixels
+            frame = self.pixel_tracker.mark(frame)
+            frame = self.canvas_zoom.mark(frame)
+
+            # Display the video frame
             self.photo = PIL.ImageTk.PhotoImage(image=PIL.Image.fromarray(frame))
             self.canvas.create_image(0, 0, image=self.photo, anchor=NW)
 
-            # create zoomed-in vignette
-            self.canvas_zoom.update(
-                frame, self.pixel_tracker.row, self.pixel_tracker.col
-            )
-
         self.window.after(self.delay, self.update)
 
+    def add_pixel_callback(self):
+        self.pixel_list.add(self.canvas_zoom.selected)
+        self.pixel_tracker.add(self.canvas_zoom.selected)
+        self.log(f"Selected pixel at {pixel_to_str(self.canvas_zoom.selected)}")
+
+    def drop_pixel_callback(self):
+        for plbl in self.pixel_list.curselection:
+            self.pixel_tracker.remove(plbl)
+        self.pixel_list.curdelete()
+        self.log(f"Dropped pixel at {pixel_to_str(self.canvas_zoom.selected)}")
+
+    def process_callback(self):
+        print(f"boxsize: {self.entry_boxsize.get()}")
+
     def mouse_callback(self, event):
-        self.pixel_tracker.reset(event.y, event.x)
+        col, row = event.x, event.y
+        frame_shape = self.vid.shape
+        if col >= frame_shape[1]:
+            col = frame_shape[1] - 1
+        if row >= frame_shape[0]:
+            row = frame_shape[0] - 1
+
+        self.canvas_zoom.set_origin((col, row))
+        self.pixel_tracker.add(self.canvas_zoom.selected, label=PREVIEW_LABEL)
 
     def zoom_callback(self, event):
         self.canvas_zoom.on_click(event)
-        new_row = (
-            self.pixel_tracker.row
-            + self.canvas_zoom.select_row
-            - self.canvas_zoom._n_offset
+        self.pixel_tracker.add(
+            self.canvas_zoom.selected, label=PREVIEW_LABEL,
         )
-        new_col = (
-            self.pixel_tracker.col
-            + self.canvas_zoom.select_col
-            - self.canvas_zoom._n_offset
-        )
-        self.pixel_tracker.reset(new_row, new_col)
+
+    def on_closing_callback(self):
+        self.log("Goodbye!")
+        self.vid.stop()
+        if self.processor is not None:
+            self.processor.stop()
+        self.window.destroy()
 
 
 def start_viewer(video_source):

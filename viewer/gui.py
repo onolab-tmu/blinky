@@ -168,17 +168,16 @@ class ZoomCanvas(Canvas):
         self._vignette = PIL.ImageTk.PhotoImage(image=PIL.Image.fromarray(z))
         self.create_image(0, 0, image=self._vignette, anchor="nw", tags="zoom_image")
 
-    def mark(self, frame):
+    def mark(self, frame, conv_func=None):
         """ Mark location of zoom in original frame """
-        c = self.origin[0] - self._n_offset
-        r = self.origin[1] - self._n_offset
-        frame = cv2.rectangle(
-            frame,
-            (c, r),
-            (c + self.patch_size, r + self.patch_size),
-            (255.0, 0.0, 0.0),
-            1,
-        )
+        c1 = self.origin[0] - self._n_offset
+        r1 = self.origin[1] - self._n_offset
+        c2 = c1 + self.patch_size
+        r2 = r1 + self.patch_size
+        if conv_func is not None:
+            c1, r1 = conv_func(c1, r1)
+            c2, r2 = conv_func(c2, r2)
+        frame = cv2.rectangle(frame, (c1, r1), (c2, r2), (255.0, 0.0, 0.0), 1,)
 
         return frame
 
@@ -269,13 +268,15 @@ class PixelTracker(object):
                 np.arange(-len(pxl["values"]) + 1, 1), pxl["values"], label=lbl
             )
 
-        self.ax.set_title(f"Selected Pixels Time Series")
         if len(self.pixels) > 0:
             self.ax.legend(loc="lower left")
         self.ax.set_ylim([0, 255])
+        self.ax.set_xticks([])
+        self.ax.set_yticks([])
+        self.fig.tight_layout(pad=0)
         self.plt_canvas.draw()
 
-    def mark(self, frame):
+    def mark(self, frame, conv_func):
         """ Mark the locations of pixels with circles on a frame """
         mark_radius = 4
         mark_color_preview = (0, 0, 255)
@@ -285,7 +286,11 @@ class PixelTracker(object):
                 c = mark_color_preview
             else:
                 c = mark_color_selected
-            frame = cv2.circle(frame, p["loc"], mark_radius, c, 2)
+            if conv_func is not None:
+                loc = conv_func(*p["loc"])
+            else:
+                loc = p["loc"]
+            frame = cv2.circle(frame, loc, mark_radius, c, 2)
 
         return frame
 
@@ -318,6 +323,23 @@ class BlinkyViewer(object):
         self.vid_brightness = self.vid.brightness
         self.vid_exposure = self.vid.exposure
 
+        # GEOMETRY #
+        ############
+
+        # Here we want to compute the size of the different boxes
+        screen_w = self.window.winfo_screenwidth()
+        screen_h = self.window.winfo_screenheight()
+        vid_h, vid_w = self.vid.shape
+        self.window.geometry(f"{screen_w}x{screen_h}+0+0")
+
+        # set the size of the video canvas
+        self.vid_can_w = int(screen_w * 0.80)
+        self.vid_can_h = int(self.vid_can_w * (vid_h / vid_w))
+
+        self.zoom_wh = int(screen_w * 0.2)
+        self.fig_w = self.zoom_wh
+        self.fig_h = 0.7 * (self.vid_can_h - self.zoom_wh)
+
         # THE LEFT PANEL #
         ##################
 
@@ -326,7 +348,7 @@ class BlinkyViewer(object):
 
         # create canvas of the right size
         self.canvas = Canvas(
-            self.left_canvas, width=self.vid.width, height=self.vid.height
+            self.left_canvas, width=self.vid_can_w, height=self.vid_can_h
         )
         self.canvas.pack(anchor=N, expand=True)
         self.canvas.bind("<Button-1>", self.mouse_callback)
@@ -360,10 +382,9 @@ class BlinkyViewer(object):
         self.label_file.pack(side=LEFT, expand=True)
 
         self.btn_file_dialog = Button(
-                self.canvas_proc, text="...", width=3, command=self.choose_file_callback
+            self.canvas_proc, text="...", width=3, command=self.choose_file_callback
         )
         self.btn_file_dialog.pack(side=LEFT, expand=True)
-
 
         self.label_boxsize = Label(self.canvas_proc, text="Box size:")
         self.label_boxsize.pack(side=LEFT, expand=True)
@@ -387,8 +408,8 @@ class BlinkyViewer(object):
         self.pixel_tracker = PixelTracker(
             row=self.vid.height // 2,
             col=self.vid.width // 2,
-            width=self.vid.height // 2,
-            height=self.vid.height // 2,
+            width=self.fig_w,
+            height=self.fig_h,
             buffer_size=100,
             master=self.right_canvas,
         )
@@ -397,7 +418,7 @@ class BlinkyViewer(object):
         # The zoom
         self.canvas_zoom = ZoomCanvas(
             self.zoom_patch_size,
-            self.vid.height // 2,
+            self.zoom_wh,
             self.vid.shape,
             self.right_canvas,
         )
@@ -452,14 +473,17 @@ class BlinkyViewer(object):
         self.console.configure(state="disabled")
         self.console.see("end")
 
-    def toggle_checksat(self):
-        self.checksat = toggle(self.checksat)
+    def coord_canvas_to_video(self, col, row):
+        """ Transforms from canvas to video coordinate """
+        c = int((col / self.vid_can_w) * self.vid.width)
+        r = int((row / self.vid_can_h) * self.vid.height)
+        return c, r
 
-    def toggle_convert_bw(self):
-        self.convert_bw = toggle(self.convert_bw)
-
-    def toggle_convert_log(self):
-        self.convert_log = toggle(self.convert_log)
+    def coord_video_to_canvas(self, col, row):
+        """ Transforms from video to canvas coordinate """
+        c = int((col / self.vid.width) * self.vid_can_w)
+        r = int((row / self.vid.height) * self.vid_can_h)
+        return c, r
 
     def update(self):
 
@@ -467,22 +491,26 @@ class BlinkyViewer(object):
 
         # Get a frame from the video source
         while self.vid.available:
-            f = self.vid.read(block=False)
-
-            if f is None:
-                break
+            frame = self.vid.read(block=False)
 
             if frame is None:
-                frame = f.copy()
+                break
 
             if self.processor is not None:
-                self.processor.process(f)
+                self.processor.process(frame)
 
-            self.pixel_tracker.push(f)
+            self.pixel_tracker.push(frame)
 
         if frame is not None:
 
             self.pixel_tracker.update()
+
+            if self.convert_bw:
+                # convert to black and white
+                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+                # but convert back to color so that we
+                # an add visual help in color
+                frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
 
             if self.checksat:
                 sat_pix = np.where(frame == 255)
@@ -490,9 +518,6 @@ class BlinkyViewer(object):
                 for col in range(3):
                     sat_pix[2][:] = col
                     frame[sat_pix] = sat_col[col]
-
-            if self.convert_bw:
-                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
 
             if self.convert_log:
                 tmp = frame.astype(np.float32)
@@ -502,15 +527,28 @@ class BlinkyViewer(object):
             # create zoomed-in vignette
             self.canvas_zoom.update(frame)
 
-            # indicate the location of selected pixels
-            frame = self.pixel_tracker.mark(frame)
-            frame = self.canvas_zoom.mark(frame)
-
             # Display the video frame
+            frame = cv2.resize(
+                frame, (self.vid_can_w, self.vid_can_h), interpolation=cv2.INTER_NEAREST
+            )
+
+            # indicate the location of selected pixels
+            frame = self.pixel_tracker.mark(frame, conv_func=self.coord_video_to_canvas)
+            frame = self.canvas_zoom.mark(frame, conv_func=self.coord_video_to_canvas)
+
             self.photo = PIL.ImageTk.PhotoImage(image=PIL.Image.fromarray(frame))
             self.canvas.create_image(0, 0, image=self.photo, anchor=NW)
 
         self.window.after(self.delay, self.update)
+
+    def toggle_checksat(self):
+        self.checksat = toggle(self.checksat)
+
+    def toggle_convert_bw(self):
+        self.convert_bw = toggle(self.convert_bw)
+
+    def toggle_convert_log(self):
+        self.convert_log = toggle(self.convert_log)
 
     def add_pixel_callback(self):
         self.pixel_list.add(self.canvas_zoom.selected)
@@ -524,12 +562,14 @@ class BlinkyViewer(object):
         self.log(f"Dropped pixel at {pixel_to_str(self.canvas_zoom.selected)}")
 
     def choose_file_callback(self):
+        """ Called when pressing on the choose file button """
         tmp_filename = asksaveasfilename()
         if tmp_filename != "":
             self.output_filename = tmp_filename
             self.label_file.config(text=f"Output file: {self.output_filename}")
 
     def process_callback(self):
+        """ Called when pressing the "Process" button """
 
         if self.btn_process.cget("text") == PROCESS_LABEL:
 
@@ -551,7 +591,9 @@ class BlinkyViewer(object):
                 if self.processor is not None:
                     self.processor.stop()
 
-                self.processor = BoxCatcher(self.pixel_list.get(), [bbox, bbox], monitor=True)
+                self.processor = BoxCatcher(
+                    self.pixel_list.get(), [bbox, bbox], monitor=True
+                )
 
                 # If the video is from a file, we restart
                 if not isinstance(self.video_source, int):
@@ -576,7 +618,8 @@ class BlinkyViewer(object):
             raise ValueError("Invalid button state")
 
     def mouse_callback(self, event):
-        col, row = event.x, event.y
+        """ Called when clicking on the main camera display """
+        col, row = self.coord_canvas_to_video(event.x, event.y)
         frame_shape = self.vid.shape
         if col >= frame_shape[1]:
             col = frame_shape[1] - 1
@@ -587,6 +630,7 @@ class BlinkyViewer(object):
         self.pixel_tracker.add(self.canvas_zoom.selected, label=PREVIEW_LABEL)
 
     def zoom_callback(self, event):
+        """ Called when clicking on the zoomed out vignette """
         self.canvas_zoom.on_click(event)
         self.pixel_tracker.add(
             self.canvas_zoom.selected, label=PREVIEW_LABEL,

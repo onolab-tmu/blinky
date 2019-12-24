@@ -31,6 +31,12 @@ import PIL.ImageTk
 import numpy as np
 import cv2
 
+try:
+    import icube_sdk
+    icube_sdk_available = True
+except ImportError:
+    icube_sdk_available = False
+
 from .videocapture import VideoCapture
 from .video import ThreadedVideoStream
 from .processors import ReadSpeedMonitor, BoxCatcher
@@ -292,7 +298,7 @@ class PixelTracker(object):
 
 # Now come the GUI part
 class BlinkyViewer(object):
-    def __init__(self, window, video_source=0):
+    def __init__(self, window, video_source=0, industrial=False):
         self.window = window
         self.window.protocol("WM_DELETE_WINDOW", self.on_closing_callback)
         # overload "Exit" function for Menu file -> quit
@@ -312,11 +318,18 @@ class BlinkyViewer(object):
         # open video feed
         self.video_source = video_source
         self.processor = ReadSpeedMonitor(monitor=True)
-        self.vid = ThreadedVideoStream(self.video_source)
-        print("Video FPS:", self.vid.fps)
 
-        self.vid_brightness = self.vid.brightness
-        self.vid_exposure = self.vid.exposure
+        # Choose the video source
+        self.industrial = industrial
+        if not self.industrial:
+            self.vid = ThreadedVideoStream(self.video_source)
+            print("Video FPS:", self.vid.fps)
+        else:
+            if not icube_sdk_available:
+                raise ValueError("The Driver for the DN3V camera is not available")
+
+            self.vid = icube_sdk.ICubeCamera(self.video_source, 60)
+            self.vid.start()
 
         # THE LEFT PANEL #
         ##################
@@ -467,7 +480,7 @@ class BlinkyViewer(object):
 
         # Get a frame from the video source
         while self.vid.available:
-            f = self.vid.read(block=False)
+            f = np.array(self.vid.read(block=False), copy=False)
 
             if f is None:
                 break
@@ -486,12 +499,15 @@ class BlinkyViewer(object):
 
             if self.checksat:
                 sat_pix = np.where(frame == 255)
-                sat_col = (0, 255, 0)
-                for col in range(3):
-                    sat_pix[2][:] = col
-                    frame[sat_pix] = sat_col[col]
+                if frame.ndim == 3:
+                    sat_col = (0, 255, 0)
+                    for col in range(3):
+                        sat_pix[2][:] = col
+                        frame[sat_pix] = sat_col[col]
+                else:
+                    frame[sat_pix] = 0
 
-            if self.convert_bw:
+            if self.convert_bw and frame.ndim == 3:
                 frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
 
             if self.convert_log:
@@ -601,5 +617,5 @@ class BlinkyViewer(object):
         self.window.destroy()
 
 
-def start_viewer(video_source):
-    BlinkyViewer(tkinter.Tk(), video_source)
+def start_viewer(video_source, industrial=False):
+    BlinkyViewer(tkinter.Tk(), video_source, industrial=industrial)

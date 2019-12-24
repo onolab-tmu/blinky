@@ -109,7 +109,7 @@ class ProcessorBase(abc.ABC):
             if self.monitor:
 
                 # now measure the frame rate
-                if frames.ndim == 3:
+                if frames.ndim <= 3:
                     n_frames = 1
                 elif frames.ndim > 3:
                     n_frames = np.prod(frames.shape[:-3])

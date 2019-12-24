@@ -12,11 +12,18 @@ if __name__ == "__main__":
         default=0,
         help="The video feed number (default 0)",
     )
+    parser.add_argument(
+        "-i",
+        "--industrial",
+        action="store_true"
+    )
     args = parser.parse_args()
+
+    print(int(args.video_source))
 
     try:
         video_source = int(args.video_source)
     except ValueError:
         video_source = args.video_source
 
-    start_viewer(args.video_source)
+    start_viewer(video_source, industrial=args.industrial)

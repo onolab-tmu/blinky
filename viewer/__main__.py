@@ -19,8 +19,6 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    print(int(args.video_source))
-
     try:
         video_source = int(args.video_source)
     except ValueError:

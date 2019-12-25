@@ -68,7 +68,7 @@ class ProcessorBase(abc.ABC):
     @property
     def fps(self):
         """ Number of frames processed per second """
-        return self.total_frames / self.runtime
+        return self.total_frames / self.runtime if self.runtime > 0 else 0
 
     def print_perf(self):
         """ Prints the number of frames processed per second to standard output """

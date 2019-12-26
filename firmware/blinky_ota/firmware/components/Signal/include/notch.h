@@ -11,9 +11,9 @@
 class DCRemoval
 {
   private:
-    float x_reg;
-    float y_reg;
-    float alpha;
+    float x_reg = 0.;
+    float y_reg = 0.;
+    float alpha = 0.99;
 
   public:
     DCRemoval(double _alpha) : x_reg(0.), y_reg(0.), alpha(_alpha) {}

@@ -1,10 +1,10 @@
 #ifndef _PARAMETER_H_
 #define _PARAMETER_H_
 
-#define HOSTNAME "mic1"
+#define HOSTNAME "rmic1"
 
-#define SSID "blinkynet"
-#define PASSWORD "iloveblinky"
+#define SSID "Onolab-G"
+#define PASSWORD "x8383kt6a7ebc"
 
 
 #endif

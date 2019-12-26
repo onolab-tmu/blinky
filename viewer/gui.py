@@ -68,108 +68,111 @@ class BlinkyViewer(object):
         screen_w = self.window.winfo_screenwidth()
         screen_h = self.window.winfo_screenheight()
         vid_h, vid_w = self.vid.shape
-        self.window.geometry(f"{screen_w}x{screen_h}+0+0")
 
         # set the size of the video canvas
-        self.vid_can_w = int(screen_w * 0.80)
+        self.vid_can_w = int(screen_w * 0.75)
         self.vid_can_h = int(self.vid_can_w * (vid_h / vid_w))
 
         if self.vid_can_h > 0.9 * screen_h:
-            self.vid_can_h = int(screen_h * 0.80)
+            self.vid_can_h = int(screen_h * 0.75)
             self.vid_can_w = int(self.vid_can_h * (vid_w / vid_h))
 
-        self.zoom_wh = int(screen_w * 0.2)
+        self.window_w = int(1.33 * self.vid_can_w)
+
+        self.zoom_wh = int(0.33 * self.vid_can_w)
         self.fig_w = self.zoom_wh
-        self.fig_h = 0.7 * (self.vid_can_h - self.zoom_wh)
+        self.fig_h = self.vid_can_h - self.zoom_wh
         self.plist_w = self.zoom_wh
-        self.plist_h = self.vid_can_h - self.zoom_wh - self.fig_h
+        self.plist_h = int(0.9 * screen_h) - self.vid_can_h
 
         self.buttons_w = int(self.vid_can_w / 3)
-        self.buttons_h = screen_h - self.vid_can_h
+        self.buttons_h = int(0.9 * screen_h) - self.vid_can_h
 
         self.console_w = int(self.vid_can_w / 3)
-        self.console_h = screen_h - self.vid_can_h
+        self.console_h = int(0.9 * screen_h) - self.vid_can_h
 
         self.info_w = self.vid_can_w - self.buttons_w - self.console_w
-        self.info_h = screen_h - self.vid_can_h
+        self.info_h = int(0.9 * screen_h) - self.vid_can_h
+
+        self.window_h = self.vid_can_h + self.plist_h
+
+        self.window_w = int(1.03 * self.window_w)
+        self.window_h = int(1.03 * self.window_h)
+
+        self.window.geometry(f"{self.window_w}x{self.window_h}+0+0")
 
         # THE LEFT PANEL #
         ##################
 
-        self.left_canvas = Canvas(window)
-        self.left_canvas.pack(side=LEFT, expand=True)
-
         # create canvas of the right size
         self.canvas = Canvas(
-            self.left_canvas, width=self.vid_can_w, height=self.vid_can_h
+            self.window, width=self.vid_can_w, height=self.vid_can_h
         )
-        self.canvas.pack(anchor=N, expand=True)
+        self.canvas.grid(row=0, column=0, rowspan=2, columnspan=3)
         self.canvas.bind("<Button-1>", self.mouse_callback)
 
-        # Put the widegets from the bottom in a separate canvas
-        self.left_bottom_canvas = Canvas(self.left_canvas, width=self.vid_can_w, height=screen_h - self.vid_can_h)
-        self.left_bottom_canvas.pack(anchor=CENTER)
+        # The control frame with all buttons
+        self.frame_control = Frame(self.window)
+        self.frame_control.grid(row=2, column=0, sticky=N)
 
         # The Buttons
-        self.canvas_buttons = Canvas(self.left_bottom_canvas, width=self.buttons_w)
-        self.canvas_buttons.pack(side=LEFT, expand=True)
+        self.frame_control_buttons = Frame(self.frame_control)
+        self.frame_control_buttons.grid(row=0, column=0)
+
         self.btn_checksat = Button(
-            self.canvas_buttons, text="Sat", width=20, command=self.toggle_checksat
+            self.frame_control_buttons, text="Sat", width=10, command=self.toggle_checksat
         )
-        self.btn_checksat.pack(side=LEFT, expand=True)
+        self.btn_checksat.grid(row=0, column=0)
 
         self.btn_convert_bw = Button(
-            self.canvas_buttons, text="BW", width=20, command=self.toggle_convert_bw
+            self.frame_control_buttons, text="BW", width=10, command=self.toggle_convert_bw
         )
-        self.btn_convert_bw.pack(side=LEFT, expand=True)
+        self.btn_convert_bw.grid(row=0, column=1)
 
         self.btn_convert_log = Button(
-            self.canvas_buttons, text="Log", width=20, command=self.toggle_convert_log
+            self.frame_control_buttons, text="Log", width=10, command=self.toggle_convert_log
         )
-        self.btn_convert_log.pack(side=LEFT, expand=True)
+        self.btn_convert_log.grid(row=0, column=2)
 
         # The processing part
-        self.canvas_proc = Canvas(self.left_bottom_canvas, width=self.buttons_w)
-        self.canvas_proc.pack(anchor=CENTER, expand=True)
+        self.frame_control_proc = Frame(self.frame_control)
+        self.frame_control_proc.grid(row=1, column=0)
 
         self.output_filename = DEFAULT_FILENAME
         self.label_file = Label(
-            self.canvas_proc, text=f"Output file: {self.output_filename}"
+            self.frame_control_proc, text=f"Output file: {self.output_filename}"
         )
-        self.label_file.pack(side=LEFT, expand=True)
+        self.label_file.grid(row=0, column=0)
 
         self.btn_file_dialog = Button(
-            self.canvas_proc, text="...", width=3, command=self.choose_file_callback
+            self.frame_control_proc, text="...", width=3, command=self.choose_file_callback
         )
-        self.btn_file_dialog.pack(side=LEFT, expand=True)
+        self.btn_file_dialog.grid(row=0, column=1)
 
-        self.label_boxsize = Label(self.canvas_proc, text="Box size:")
-        self.label_boxsize.pack(side=LEFT, expand=True)
+        self.label_boxsize = Label(self.frame_control_proc, text="Box size:")
+        self.label_boxsize.grid(row=0, column=2)
 
-        self.entry_boxsize = Entry(self.canvas_proc, width=10)
+        self.entry_boxsize = Entry(self.frame_control_proc, width=3)
         self.entry_boxsize.insert(0, "1")
-        self.entry_boxsize.pack(side=LEFT, expand=True)
+        self.entry_boxsize.grid(row=0, column=3)
 
         self.btn_process = Button(
-            self.canvas_proc, text=PROCESS_LABEL, width=20, command=self.process_callback
+            self.frame_control_proc, text=PROCESS_LABEL, width=10, command=self.process_callback
         )
-        self.btn_process.pack(side=LEFT, expand=True)
+        self.btn_process.grid(row=0, column=4)
 
-        self.canvas_info = InfoBox({ "fps_video": 0, "fps_proc": 0 }, self.left_bottom_canvas, width=self.info_w, height=self.info_h)
-        self.canvas_info.pack(side=LEFT, expand=True)
+        self.canvas_info = InfoBox({ "fps_video": 0, "fps_proc": 0 }, self.window, width=self.info_w, height=self.info_h)
+        self.canvas_info.grid(row=2, column=1)
 
         # The Console
-        self.canvas_console = Canvas(self.left_bottom_canvas, width=self.console_w, height=self.console_h)
-        self.canvas_console.pack_propagate(False)
-        self.canvas_console.pack(side=LEFT)
+        self.canvas_console = Canvas(self.window, width=self.console_w, height=self.console_h)
+        self.canvas_console.grid_propagate(False)
+        self.canvas_console.grid(row=2, column=2)
         self.console = ScrolledText(self.canvas_console, state=DISABLED)
-        self.console.pack(anchor=CENTER, expand=True)
+        self.console.grid(row=0, column=0)
 
         # THE RIGHT PANEL #
         ###################
-
-        self.right_canvas = Canvas(window)
-        self.right_canvas.pack(side=LEFT, expand=True)
 
         # The pixel tracking figure
         self.pixel_tracker = PixelTracker(
@@ -178,46 +181,46 @@ class BlinkyViewer(object):
             width=self.fig_w,
             height=self.fig_h,
             buffer_size=100,
-            master=self.right_canvas,
+            master=self.window,
         )
-        self.pixel_tracker.pack(anchor=CENTER, expand=True)
+        self.pixel_tracker.grid(row=0, column=3)
 
         # The zoom
         self.canvas_zoom = ZoomCanvas(
             self.zoom_patch_size,
             self.zoom_wh,
             self.vid.shape,
-            self.right_canvas,
+            self.window,
         )
-        self.canvas_zoom.pack(anchor=CENTER, expand=True)
+        self.canvas_zoom.grid(row=1, column=3)
         self.canvas_zoom.bind("<Button-1>", self.zoom_callback)
 
         # Notify pixel tracker of initial zoom selection
         self.pixel_tracker.add(self.canvas_zoom.selected, label=PREVIEW_LABEL)
 
         # Buttons to add and remove pixels
-        self.canvas_pix_btn = Canvas(self.right_canvas)
-        self.canvas_pix_btn.pack(anchor=CENTER, expand=True)
+        self.frame_pix_btn = Frame(self.window)
+        self.frame_pix_btn.grid(row=2, column=3)
 
         self.btn_add_pixel = Button(
-            self.canvas_pix_btn,
+            self.frame_pix_btn,
             text="Add Pixel",
-            width=20,
+            width=10,
             command=self.add_pixel_callback,
         )
-        self.btn_add_pixel.pack(side=LEFT, expand=True)
+        self.btn_add_pixel.grid(row=0, column=0)
 
         self.btn_drop_pixel = Button(
-            self.canvas_pix_btn,
+            self.frame_pix_btn,
             text="Drop Pixel",
-            width=20,
+            width=10,
             command=self.drop_pixel_callback,
         )
-        self.btn_drop_pixel.pack(side=LEFT, expand=True)
+        self.btn_drop_pixel.grid(row=0, column=1)
 
         # The selected pixels list
-        self.pixel_list = PixelList(self.right_canvas, width=self.plist_w, height=self.plist_h)  #, list_width=40, list_height=10)
-        self.pixel_list.pack(anchor=CENTER, expand=True)
+        self.pixel_list = PixelList(self.frame_pix_btn, width=self.plist_w, height=self.plist_h)  #, list_width=40, list_height=10)
+        self.pixel_list.grid(row=1, column=0, columnspan=2, sticky=W + E)
 
         self.log("Welcome to BlinkyViewer")
 
@@ -248,8 +251,8 @@ class BlinkyViewer(object):
 
     def update(self):
 
-        fps_proc = self.processor.fps if self.processor is not None else None
-        self.canvas_info.update(fps_video=self.vid.fps, fps_proc=fps_proc)
+        fps_proc = self.processor.fps if self.processor is not None else 0.
+        self.canvas_info.update(fps_video=f"{self.vid.fps:6.2f}", fps_proc=f"{fps_proc:6.2f}")
 
         frame = None
 

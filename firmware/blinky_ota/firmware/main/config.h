@@ -5,6 +5,7 @@
 #define __CONFIG_H__
 
 #include <vector>
+#include <map>
 #include <driver/gpio.h>
 
 // Declare the GPIO in an ENUM so that
@@ -17,6 +18,13 @@ const int LED_LEFT = LED_RED;
 const int LED_RIGHT = LED_GREEN;
 const auto LED_RESOLUTION = LEDC_TIMER_12_BIT;
 const int LED_FREQUENCY(16000);
+
+map<int, uint32_t> duty_max {
+  {LED_RED, 1200},
+  {LED_WHITE, 1200},
+  {LED_BLUE, 1000},
+  {LED_GREEN, 4095}
+};
 
 // DIP SWITCHES
 const auto DIP_SWITCH_1 = GPIO_NUM_13;

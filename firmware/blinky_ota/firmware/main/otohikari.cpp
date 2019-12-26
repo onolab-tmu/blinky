@@ -19,21 +19,15 @@
 // and an enum to keep track of which is which
 // The ordering should correspond
 const vector<int> leds{LED_RED, LED_WHITE, LED_BLUE, LED_GREEN};
-map<int, uint32_t> duty_max {
-  {LED_RED, 1200},
-  {LED_WHITE, 1200},
-  {LED_BLUE, 1000},
-  {LED_GREEN, 4095}
-};
 
 // States
 enum class State : char
 {
-  WHITE_SIG_NO_REF = 0,
-  CALIBRATION = 1,
-  RED_SIG_BLUE_REF = 2,
-  RED_BLUE_DOUBLE_REF = 3,
-  CALIBRATION_MAP = 4,
+  WHITE_SIGNAL = 0,
+  RED_SIGNAL = 1,
+  CALIBRATION = 2,
+  CALIBRATION_MAP = 3,
+  RED_BLUE_DOUBLE_REF = 4,
   STATE_5 = 5,
   STATE_6 = 6,
   STATE_7 = 7
@@ -109,7 +103,7 @@ void main_process()
               if (state_new != state_current)
               {
                 // do some initialization
-                current_led = LED_RED;
+                current_led = LED_WHITE;
                 state_current = state_new;
 
                 // Turn off all LEDs
@@ -132,10 +126,10 @@ void main_process()
               {
                 ledC->updateDuty(current_led, 0);
 
-                if (current_led == LED_RED)
-                  current_led = LED_BLUE;  // red -> blue
+                if (current_led == LED_WHITE)
+                  current_led = LED_RED;  // red -> blue
                 else
-                  current_led = LED_RED;  // blue -> red
+                  current_led = LED_WHITE;  // blue -> red
 
                 // Reset the function
                 the_ramp.reset(0.);
@@ -155,8 +149,8 @@ void main_process()
 
             break;
 
-          case State::WHITE_SIG_NO_REF:
-          case State::RED_SIG_BLUE_REF:
+          case State::WHITE_SIGNAL:
+          case State::RED_SIGNAL:
             {
               if (state_new != state_current)
               {
@@ -165,10 +159,6 @@ void main_process()
                 // Turn off all LEDs
                 for (int i = 0 ; i < leds.size() ; i++)
                   ledC->updateDuty(leds[i], 0);
-
-                // Use the Blue LED as reference at half PWM resolution
-                if (state_new == State::RED_SIG_BLUE_REF)
-                  ledC->updateDuty(LED_BLUE, duty_ref[LED_BLUE]);
 
                 counter = 0;
               }
@@ -200,12 +190,12 @@ void main_process()
 
                 // Set the LED duty cycle
                 uint32_t duty = 0;
-                if (state_current == State::RED_SIG_BLUE_REF)
+                if (state_current == State::RED_SIGNAL)
                 {
                   duty = (uint32_t)(duty_f * duty_max[LED_RED]);
                   ledC->updateDuty(LED_RED, duty);
                 }
-                else if (state_current == State::WHITE_SIG_NO_REF)
+                else if (state_current == State::WHITE_SIGNAL)
                 {
                   duty = (uint32_t)(duty_f * duty_max[LED_WHITE]);
                   ledC->updateDuty(LED_WHITE, duty);

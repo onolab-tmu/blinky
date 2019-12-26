@@ -25,14 +25,14 @@ enum class State : char
 {
   WHITE_SIGNAL = 0,
   RED_SIGNAL = 1,
-  CALIBRATION = 2,
-  CALIBRATION_MAP = 3,
+  CALIBRATION_RAMP = 2,
+  CALIBRATION_RAMP_MAP = 3,
   RED_BLUE_DOUBLE_REF = 4,
-  STATE_5 = 5,
-  STATE_6 = 6,
+  RED_CALIBRATION = 5,
+  WHITE_CALIBRATION = 6,
   STATE_7 = 7
 };
-State state_current = State::WHITE_SIG_NO_REF;
+State state_current = State::WHITE_SIGNAL;
 
 // For the calibration
 int counter = 0;
@@ -97,8 +97,8 @@ void main_process()
             vTaskDelay(100 / portTICK_PERIOD_MS);
             break;
 
-          case State::CALIBRATION:
-          case State::CALIBRATION_MAP:
+          case State::CALIBRATION_RAMP:
+          case State::CALIBRATION_RAMP_MAP:
             {
               if (state_new != state_current)
               {
@@ -138,7 +138,7 @@ void main_process()
               }
 
               // Optionally apply mapping depending on state
-              if (state_current == State::CALIBRATION_MAP)
+              if (state_current == State::CALIBRATION_RAMP_MAP)
                 duty_f = blinky_non_linearity(duty_f);
 
               uint32_t duty = duty_f * duty_max[current_led];
@@ -223,11 +223,53 @@ void main_process()
             }
             break;
 
-          case State::STATE_5:
-          case State::STATE_6:
-          case State::STATE_7:
+          case State::RED_CALIBRATION:
+          case State::WHITE_CALIBRATION:
+            {
+              if (state_new != state_current)
+              {
+                state_current = state_new;
+
+                // Turn off all LEDs
+                for (int i = 0 ; i < leds.size() ; i++)
+                  ledC->updateDuty(leds[i], 0);
+
+                counter = 0;
+                timer->start();
+
+                if (state_current == State::RED_CALIBRATION)
+                  ledC->updateDuty(LED_RED, duty_max[LED_RED]);
+                else if (state_current == State::WHITE_CALIBRATION)
+                  ledC->updateDuty(LED_WHITE, duty_max[LED_WHITE]);
+              }
+
+              float elapsed_time = timer->measure();
+
+              if (elapsed_time >= CALIB_PERIOD_SEC * 1000)
+              {
+                if (state_current == State::RED_CALIBRATION)
+                  ledC->updateDuty(LED_RED, duty_max[LED_RED]);
+                else if (state_current == State::WHITE_CALIBRATION)
+                  ledC->updateDuty(LED_WHITE, duty_max[LED_WHITE]);
+
+                timer->start();
+              }
+              else if (elapsed_time >= CALIB_PERIOD_SEC * 500)
+              {
+                if (state_current == State::RED_CALIBRATION)
+                  ledC->updateDuty(LED_RED, 0);
+                else if (state_current == State::WHITE_CALIBRATION)
+                  ledC->updateDuty(LED_WHITE, 0);
+              }
+
+              vTaskDelay(10 / portTICK_PERIOD_MS);
+            }
             break;
 
+          case State::STATE_7:
+            state_current = state_new;
+            vTaskDelay(10 / portTICK_PERIOD_MS);
+            break;
         }
     }
 }

@@ -51,15 +51,12 @@ class BlinkyViewer(object):
 
         # Choose the video source
         self.industrial = industrial
-        if not self.industrial:
-            self.vid = ThreadedVideoStream(self.video_source)
-            print("Video FPS:", self.vid.fps)
-        else:
-            if not icube_sdk_available:
-                raise ValueError("The Driver for the DN3V camera is not available")
 
-            self.vid = icube_sdk.ICubeCamera(self.video_source, 200)
-            self.vid.start()
+        self.vid = None
+        self.start_video()
+
+        # Keep track of the current frame
+        self.current_frame = None
 
         # GEOMETRY #
         ############
@@ -231,6 +228,22 @@ class BlinkyViewer(object):
 
         self.window.mainloop()
 
+    def start_video(self):
+        # first stop the video if already running
+        if self.vid is not None:
+            self.vid.stop()
+
+        if not self.industrial:
+            self.vid = ThreadedVideoStream(self.video_source)
+        else:
+            if not icube_sdk_available:
+                raise ValueError("The Driver for the DN3V camera is not available")
+
+            self.vid = icube_sdk.ICubeCamera(self.video_source, 200)
+            self.vid.start()
+
+        print("Video FPS:", self.vid.fps)
+
     def log(self, message):
         self.console.configure(state="normal")
         self.console.insert("end", "\n" + message)
@@ -254,21 +267,38 @@ class BlinkyViewer(object):
         fps_proc = self.processor.fps if self.processor is not None else 0.
         self.canvas_info.update(fps_video=f"{self.vid.fps:6.2f}", fps_proc=f"{fps_proc:6.2f}")
 
-        frame = None
+        new_frame = None
 
         # Get a frame from the video source
         while self.vid.available:
-            frame = np.array(self.vid.read(block=False), copy=False)
+            new_frame = np.array(self.vid.read(block=False), copy=False)
 
-            if frame is None:
+            if new_frame is None:
                 break
 
             if self.processor is not None:
-                self.processor.process(frame)
+                self.processor.process(new_frame)
 
-            self.pixel_tracker.push(frame)
+            self.pixel_tracker.push(new_frame)
 
-        if frame is not None:
+        # If the video stream stopped, restart it
+        if not self.vid.is_streaming:
+            # if recording, stop
+            if self.process_is_recording():
+                self.process_callback()
+
+            # restart video
+            self.start_video()
+
+            self.log("Looping the video")
+
+        if new_frame is not None:
+            self.current_frame = new_frame
+
+        if self.current_frame is not None:
+
+            # shorten
+            frame = self.current_frame
 
             self.pixel_tracker.update()
 
@@ -338,10 +368,16 @@ class BlinkyViewer(object):
             self.output_filename = tmp_filename
             self.label_file.config(text=f"Output file: {self.output_filename}")
 
+    def process_is_recording(self):
+        return self.btn_process.cget("text") == STOP_LABEL
+
+    def process_is_not_recording(self):
+        return self.btn_process.cget("text") == PROCESS_LABEL
+
     def process_callback(self):
         """ Called when pressing the "Process" button """
 
-        if self.btn_process.cget("text") == PROCESS_LABEL:
+        if self.process_is_not_recording():
 
             bbox = self.entry_boxsize.get()
             pixel_list = self.pixel_list.get()
@@ -375,18 +411,24 @@ class BlinkyViewer(object):
 
                 self.btn_process.config(text=STOP_LABEL)
 
-        elif self.btn_process.cget("text") == STOP_LABEL:
+        elif self.process_is_recording():
 
             self.log("Stop recording")
 
             self.btn_process.config(text=PROCESS_LABEL)
 
             if isinstance(self.processor, BoxCatcher):
+                # stop the processor
                 self.processor.stop()
+
+                # save the result in blinky file
                 new_file = BlinkyFile(
                     self.processor.pixels, self.processor.data, self.vid.fps
                 )
                 new_file.dump(self.output_filename)
+
+                # Replace by the simple speed meter
+                self.processor = ReadSpeedMonitor(monitor=True)
 
         else:
             raise ValueError("Invalid button state")

@@ -105,7 +105,7 @@ class BlinkyViewer(object):
         self.canvas = Canvas(
             self.window, width=self.vid_can_w, height=self.vid_can_h
         )
-        self.canvas.grid(row=0, column=0, rowspan=2, columnspan=3)
+        self.canvas.grid(row=0, column=0, rowspan=2, columnspan=4)
         self.canvas.bind("<Button-1>", self.mouse_callback)
 
         # The control frame with all buttons
@@ -132,41 +132,44 @@ class BlinkyViewer(object):
         self.btn_convert_log.grid(row=0, column=2)
 
         # The processing part
-        self.frame_control_proc = Frame(self.frame_control)
-        self.frame_control_proc.grid(row=1, column=0)
+        self.frame_control_proc = Frame(self.window)
+        self.frame_control_proc.grid(row=2, column=1, sticky="n")
+
+        self.label_frame = Label(
+            self.frame_control_proc, text=f"Record:"
+        )
+        self.label_frame.grid(row=0, column=0, sticky="nw")
 
         self.output_filename = DEFAULT_FILENAME
         self.label_file = Label(
-            self.frame_control_proc, text=f"Output file: {self.output_filename}"
+            self.frame_control_proc, text=f"Output file:"
         )
-        self.label_file.grid(row=0, column=0)
+        self.label_file.grid(row=1, column=0, sticky="nw")
 
-        self.btn_file_dialog = Button(
-            self.frame_control_proc, text="...", width=3, command=self.choose_file_callback
-        )
-        self.btn_file_dialog.grid(row=0, column=1)
+        self.entry_filename = Entry(self.frame_control_proc, width=20)
+        self.entry_filename.insert(0, self.output_filename)
+        self.entry_filename.grid(row=1, column=1, sticky="nw")
 
         self.label_boxsize = Label(self.frame_control_proc, text="Box size:")
-        self.label_boxsize.grid(row=0, column=2)
+        self.label_boxsize.grid(row=2, column=0, sticky="nw")
 
         self.entry_boxsize = Entry(self.frame_control_proc, width=3)
         self.entry_boxsize.insert(0, "1")
-        self.entry_boxsize.grid(row=0, column=3)
+        self.entry_boxsize.grid(row=2, column=1, sticky="nw")
 
         self.btn_process = Button(
             self.frame_control_proc, text=PROCESS_LABEL, width=10, command=self.process_callback
         )
-        self.btn_process.grid(row=0, column=4)
+        self.btn_process.grid(row=3, column=0)
 
         self.canvas_info = InfoBox({ "fps_video": 0, "fps_proc": 0 }, self.window, width=self.info_w, height=self.info_h)
-        self.canvas_info.grid(row=2, column=1)
+        self.canvas_info.grid(row=2, column=2, sticky="n")
 
         # The Console
         self.canvas_console = Canvas(self.window, width=self.console_w, height=self.console_h)
-        self.canvas_console.grid_propagate(False)
-        self.canvas_console.grid(row=2, column=2)
-        self.console = ScrolledText(self.canvas_console, state=DISABLED)
-        self.console.grid(row=0, column=0)
+        self.canvas_console.grid(row=2, column=3, sticky="ne")
+        self.console = ScrolledText(self.canvas_console, state=DISABLED, borderwidth=2, relief="solid", width=60, height=15)
+        self.console.grid(row=0, column=0, sticky="ne")
 
         # THE RIGHT PANEL #
         ###################
@@ -180,7 +183,7 @@ class BlinkyViewer(object):
             buffer_size=100,
             master=self.window,
         )
-        self.pixel_tracker.grid(row=0, column=3)
+        self.pixel_tracker.grid(row=0, column=4)
 
         # The zoom
         self.canvas_zoom = ZoomCanvas(
@@ -189,7 +192,7 @@ class BlinkyViewer(object):
             self.vid.shape,
             self.window,
         )
-        self.canvas_zoom.grid(row=1, column=3)
+        self.canvas_zoom.grid(row=1, column=4)
         self.canvas_zoom.bind("<Button-1>", self.zoom_callback)
 
         # Notify pixel tracker of initial zoom selection
@@ -197,7 +200,7 @@ class BlinkyViewer(object):
 
         # Buttons to add and remove pixels
         self.frame_pix_btn = Frame(self.window)
-        self.frame_pix_btn.grid(row=2, column=3)
+        self.frame_pix_btn.grid(row=2, column=4)
 
         self.btn_add_pixel = Button(
             self.frame_pix_btn,
@@ -205,7 +208,7 @@ class BlinkyViewer(object):
             width=10,
             command=self.add_pixel_callback,
         )
-        self.btn_add_pixel.grid(row=0, column=0)
+        self.btn_add_pixel.grid(row=0, column=0, sticky="nw")
 
         self.btn_drop_pixel = Button(
             self.frame_pix_btn,
@@ -213,11 +216,11 @@ class BlinkyViewer(object):
             width=10,
             command=self.drop_pixel_callback,
         )
-        self.btn_drop_pixel.grid(row=0, column=1)
+        self.btn_drop_pixel.grid(row=0, column=1, sticky="nw")
 
         # The selected pixels list
-        self.pixel_list = PixelList(self.frame_pix_btn, width=self.plist_w, height=self.plist_h)  #, list_width=40, list_height=10)
-        self.pixel_list.grid(row=1, column=0, columnspan=2, sticky=W + E)
+        self.pixel_list = PixelList(self.frame_pix_btn, width=self.plist_w // 2, height=self.plist_h)  #, list_width=40, list_height=10)
+        self.pixel_list.grid(row=0, column=2, rowspan=2, sticky="nw")
 
         self.log("Welcome to BlinkyViewer")
 
@@ -381,8 +384,12 @@ class BlinkyViewer(object):
 
             bbox = self.entry_boxsize.get()
             pixel_list = self.pixel_list.get()
+            self.output_filename = self.entry_filename.get()
 
-            if not bbox.isdigit():
+            if self.output_filename == "":
+                self.log("Please choose a filename")
+
+            elif not bbox.isdigit():
                 self.log("The box size should be a number")
 
             elif len(pixel_list) == 0:

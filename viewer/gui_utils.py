@@ -11,7 +11,7 @@ import cv2
 
 
 PREVIEW_LABEL = "Preview"
-PROCESS_LABEL = "Record"
+PROCESS_LABEL = "Start"
 STOP_LABEL = "Stop"
 DEFAULT_FILENAME = "myfile.blinky"
 
@@ -35,17 +35,18 @@ class InfoBox(Frame):
         super().__init__(*args, **kwargs)
         self.grid_propagate(False)
 
+        info_label = Label(self, text="Info:")
+        info_label.grid(row=0, column=0, columnspan=2, sticky="w")
+
         self.fields = {}
 
         for row, (lbl, value) in enumerate(content.items()):
-            field = Frame(self)
-            field.grid()
             new = {
-                "label": Label(field, text=lbl + ": "),
-                "value": Label(field, text=str(value)),
+                "label": Label(self, text=lbl + ": "),
+                "value": Label(self, text=str(value)),
             }
-            new["label"].grid(row=row, column=0, sticky=W)
-            new["value"].grid(row=row, column=1, sticky=W)
+            new["label"].grid(row=row + 1, column=0, sticky="w")
+            new["value"].grid(row=row + 1, column=1, sticky="w")
             self.fields[lbl] = new
 
     def update(self, **content):
@@ -60,8 +61,8 @@ class PixelList(Frame):
         self.grid_propagate(False)
         self.pixels = {}
 
-        self.list = Listbox(self, width=20)  # , width=list_width, height=list_height)
-        self.list.grid(sticky=W+E)
+        self.list = Listbox(self, width=25, height=12)  # , width=list_width, height=list_height)
+        self.list.grid(row=0, column=0, sticky="nw")
 
     def add(self, pixel):
         """ Add a pixel to the list """

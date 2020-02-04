@@ -1,5 +1,5 @@
-Blinky
-======
+Blinky Hardware
+===============
 
 > **Blinky**
 >
@@ -19,47 +19,14 @@ of applications in a [paper](http://www.apsipa.org/proceedings/2018/pdfs/0001899
 Hardware
 --------
 
-The hardware mainly consists of three components.
-
-* ESP32 board such as the [Adafruit HUZZAH32](https://www.adafruit.com/product/3405)
-    or [WEMOS D32](https://wiki.wemos.cc/products:d32:d32)
-* MEMS digital microphone with I2S output (e.g. [SPH0645LM4H](https://www.adafruit.com/product/3421)
-  or [ICS-43432](https://www.invensense.com/products/digital/ics-43432/))
-* One (or more) LEDs (and current limiting resistors)
-
-### Pin Mapping
-
-Each device has a stereo microphone and four LEDs (red, green, blue, white). The microphones are connected
-to I2S0 via these pins
-
-    WS   <---> 14
-    BCK  <---> 23
-    DATA <---> 22
-
-The LEDs are connected as follows
-
-    WHITE <---> 15
-    GREEN <---> 25 (DAC1)
-    RED   <---> 26 (DAC2)
-    BLUE  <---> 27
-
-In addition, there is a DIP switch with three channels connected to
-
-    DIP1 <---> 13
-    DIP2 <---> 32
-    DIP3 <---> 33
-
-The switches connect to VCC and should thus be used with the pin configured as input with pull-down resistor.
-They are intended to be change between a number of preset configurations.
-
-### PCB
-
-The design files for the PCB and enclosure can be found in the `PCB` folder.
+The hardware is based on the ESP32 with a custom extension PCB bearing two MEMS
+microphones and a few LEDs.
+Details and necessary files are provided in the `hardware` folder.
 
 Firmwares
 ---------
 
-The folder `firmware` contains three
+The folder `firmware` contains three different firmwares for the device.
 
 ### Blinky OTA Firmware
 
@@ -105,17 +72,26 @@ The instructions to use this firmware are in `firmware/recorder/BlinkyRecorder_R
 This firmware is a stripped down version of the regular Blinky firmware. Its role
 is to highlight how to read samples from one or both microphones and control the LEDs.
 
+Software
+--------
+
+The `python` folder contains the `blinkytools` python package. This package
+offers a graphical user interface (GUI) to easily capture the signals from
+multiple Blinkies using a video camera, or from a pre-recorded video.
+
+The package can be install from [pypi](https://pypi.org/project/blinkytools/) directly.
+
+    pip install blinkytools
+
 Authors
 -------
 
 * The board was designed by [Evixar](https://www.evixar.com/) under directions from Robin Scheibler.
-* The code was written by [Evixar](https://www.evixar.com/) and Robin Scheibler.
+* The code was written by Robin Scheibler and [Evixar](https://www.evixar.com/).
 
 License
 -------
 
-MIT License for the software, see `LICENSE.
+MIT License for all the software, see `LICENSE.
 
 CC-BY-SA 4.0 for the hardware.
-
-

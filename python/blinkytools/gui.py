@@ -142,12 +142,12 @@ class BlinkyViewer(object):
         self.btn_convert_bw = Button(
             self.frame_control_buttons, text="BW", width=10, command=self.toggle_convert_bw
         )
-        self.btn_convert_bw.grid(row=0, column=1)
+        self.btn_convert_bw.grid(row=1, column=0)
 
         self.btn_convert_log = Button(
             self.frame_control_buttons, text="Log", width=10, command=self.toggle_convert_log
         )
-        self.btn_convert_log.grid(row=0, column=2)
+        self.btn_convert_log.grid(row=2, column=0)
 
         # The processing part
         self.frame_control_proc = Frame(self.window)
@@ -180,13 +180,13 @@ class BlinkyViewer(object):
         )
         self.btn_process.grid(row=3, column=0)
 
-        self.canvas_info = InfoBox({ "fps_video": 0, "fps_proc": 0 }, self.window, width=self.info_w, height=self.info_h)
+        self.canvas_info = InfoBox({ "fps_video": 0, "fps_proc": 0 }, self.window, width=self.info_w // 2, height=self.info_h)
         self.canvas_info.grid(row=2, column=2, sticky="n")
 
         # The Console
         self.canvas_console = Canvas(self.window, width=self.console_w, height=self.console_h)
         self.canvas_console.grid(row=2, column=3, sticky="ne")
-        self.console = ScrolledText(self.canvas_console, state=DISABLED, borderwidth=2, relief="solid", width=60, height=15)
+        self.console = ScrolledText(self.canvas_console, state=DISABLED, borderwidth=2, relief="solid", width=60, height=12)
         self.console.grid(row=0, column=0, sticky="ne")
 
         # THE RIGHT PANEL #

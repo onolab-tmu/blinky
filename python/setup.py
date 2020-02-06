@@ -19,7 +19,7 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/onolab-tmu/blinky",
-    install_requires=["numpy", "matplotlib", "msgpack", "opencv-python"],
+    install_requires=["numpy", "matplotlib", "msgpack", "opencv-python", "pillow"],
     packages=setuptools.find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",

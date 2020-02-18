@@ -17,6 +17,7 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
+import time
 import tkinter
 from tkinter import *
 from tkinter.scrolledtext import ScrolledText
@@ -435,6 +436,8 @@ class BlinkyViewer(object):
                     self.vid = ThreadedVideoStream(self.video_source)
 
                 self.btn_process.config(text=STOP_LABEL)
+                self.process_record_start_time = time.perf_counter()
+
 
         elif self.process_is_recording():
 
@@ -446,9 +449,12 @@ class BlinkyViewer(object):
                 # stop the processor
                 self.processor.stop()
 
+                recording_time = time.perf_counter() - self.process_record_start_time
+                fps = self.processor.data.shape[0] / recording_time
+
                 # save the result in blinky file
                 new_file = BlinkyFile(
-                    self.processor.pixels, self.processor.data, self.vid.fps
+                    self.processor.pixels, self.processor.data, fps
                 )
                 new_file.dump(self.output_filename)
 

@@ -1,0 +1,20 @@
+{
+    "project_name":       "bootloader",
+    "project_path":       "/mnt/c/Users/popura/linux_home/research/onolab/esp/esp-idf/components/bootloader/subproject",
+    "build_dir":          "/mnt/c/Users/popura/linux_home/research/onolab/blinky/firmware/blinky_ota/build/bootloader",
+    "config_file":        "/mnt/c/Users/popura/linux_home/research/onolab/blinky/firmware/blinky_ota/sdkconfig",
+    "config_defaults":    "",
+    "app_elf":            "bootloader.elf",
+    "app_bin":            "bootloader.bin",
+    "git_revision":       "v4.2",
+    "target":             "esp32",
+    "phy_data_partition": "",
+    "monitor_baud" :      "115200",
+    "monitor_toolprefix": "xtensa-esp32-elf-",
+    "config_environment" : {
+        "COMPONENT_KCONFIGS" : "/mnt/c/Users/popura/linux_home/research/onolab/esp/esp-idf/components/efuse/Kconfig;/mnt/c/Users/popura/linux_home/research/onolab/esp/esp-idf/components/esp32/Kconfig;/mnt/c/Users/popura/linux_home/research/onolab/esp/esp-idf/components/esp_common/Kconfig;/mnt/c/Users/popura/linux_home/research/onolab/esp/esp-idf/components/log/Kconfig;/mnt/c/Users/popura/linux_home/research/onolab/esp/esp-idf/components/spi_flash/Kconfig",
+        "COMPONENT_KCONFIGS_PROJBUILD" : "/mnt/c/Users/popura/linux_home/research/onolab/esp/esp-idf/components/bootloader/Kconfig.projbuild;/mnt/c/Users/popura/linux_home/research/onolab/esp/esp-idf/components/esptool_py/Kconfig.projbuild;/mnt/c/Users/popura/linux_home/research/onolab/esp/esp-idf/components/partition_table/Kconfig.projbuild"
+    },
+    "build_components" : [ "bootloader", "bootloader_support", "efuse", "esp32", "esp_common", "esp_rom", "esptool_py", "log", "main", "micro-ecc", "partition_table", "soc", "spi_flash", "xtensa", "" ],
+    "build_component_paths" : [ "/mnt/c/Users/popura/linux_home/research/onolab/esp/esp-idf/components/bootloader", "/mnt/c/Users/popura/linux_home/research/onolab/esp/esp-idf/components/bootloader_support", "/mnt/c/Users/popura/linux_home/research/onolab/esp/esp-idf/components/efuse", "/mnt/c/Users/popura/linux_home/research/onolab/esp/esp-idf/components/esp32", "/mnt/c/Users/popura/linux_home/research/onolab/esp/esp-idf/components/esp_common", "/mnt/c/Users/popura/linux_home/research/onolab/esp/esp-idf/components/esp_rom", "/mnt/c/Users/popura/linux_home/research/onolab/esp/esp-idf/components/esptool_py", "/mnt/c/Users/popura/linux_home/research/onolab/esp/esp-idf/components/log", "/mnt/c/Users/popura/linux_home/research/onolab/esp/esp-idf/components/bootloader/subproject/main", "/mnt/c/Users/popura/linux_home/research/onolab/esp/esp-idf/components/bootloader/subproject/components/micro-ecc", "/mnt/c/Users/popura/linux_home/research/onolab/esp/esp-idf/components/partition_table", "/mnt/c/Users/popura/linux_home/research/onolab/esp/esp-idf/components/soc", "/mnt/c/Users/popura/linux_home/research/onolab/esp/esp-idf/components/spi_flash", "/mnt/c/Users/popura/linux_home/research/onolab/esp/esp-idf/components/xtensa", "" ]
+}

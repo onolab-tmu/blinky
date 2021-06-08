@@ -9,6 +9,8 @@
 #include "EVXAudioRecorder.h"
 #include "EVXGPIOController.h"
 
+#include "tiny_dnn/tiny_dnn.h"
+
 // LED
 #define LED_BLUE (27)
 #define LED_GREEN (25)

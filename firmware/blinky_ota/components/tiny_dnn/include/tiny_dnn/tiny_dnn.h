@@ -50,6 +50,7 @@
 #include "tiny_dnn/layers/quantized_deconvolutional_layer.h"
 #include "tiny_dnn/layers/recurrent_layer.h"
 #include "tiny_dnn/layers/slice_layer.h"
+#include "tiny_dnn/layers/linear_layer.h"
 #include "tiny_dnn/layers/zero_pad_layer.h"
 
 #ifdef CNN_USE_GEMMLOWP
@@ -119,7 +120,7 @@ using dropout = tiny_dnn::dropout_layer;
 
 using input = tiny_dnn::input_layer;
 
-using linear = linear_layer;
+using linear = tiny_dnn::linear_layer;
 
 using lrn = tiny_dnn::lrn_layer;
 

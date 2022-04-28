@@ -4,12 +4,36 @@ blinky_otaは，ESP32用ファームウェアです．
 ESP32デバイスの制御のためのAPIに加え，OTA (Over The Air) でプログラムの更新を行う機能を有しています。
 
 # 準備
-blinky_otaをESP32デバイスにインストールするためにはESP32の開発環境であるESP-IDF **v4.2**が必要です（他のバージョンでは動作しません）．
-[公式ページ](https://docs.espressif.com/projects/esp-idf/en/v4.2.3/esp32/get-started/index.html)．
+blinky_otaをESP32デバイスにインストールするためには，PC上にESP32の開発環境であるESP-IDF **v4.2**が必要です．
+[ESP-IDF v4.2のインストール方法](https://docs.espressif.com/projects/esp-idf/en/v4.2.3/esp32/get-started/index.html)
+に従い環境を構築してください．
+（他のバージョンでは動作しません）．
 Windows環境の場合は，**WSL 1**を利用して，Linux版の手順に従うことをおすすめします．
 
+# ESP32デバイスへのBlinky-OTAのインストール
+1. [このGitリポジトリ](https://github.com/onolab-tmu/blinky/tree/esp_v4.2)をクローン
+   ```
+   git clone -b esp_v4.2 https://github.com/onolab-tmu/blinky.git
+   ```
+3. ESP-IDF環境をexport
+   ```
+   get_idf
+   ```
+1. クローンしたリポジトリに移動
+   ```
+   cd path-to-dir/blinky/firmware/blinky_ota
+   ```
+1. コンパイル
+   ```
+   idf.py build
+   ```
+1. ESP32ボードに焼く
+   ```
+   idf.py -p /dev/ttyS* -b 115200 erase_flash flash
+   ```
 
-その為には、`idf.py menuconfig`での設定と、1度だけ有線接続での書き込みが必要となります。<br>
+# OTAでのファームウェア更新
+OTAでのファームウェア更新には、`idf.py menuconfig`での設定と、1度だけ有線接続での書き込みが必要となります。<br>
 詳細は以下を参照ください。
 
 ---

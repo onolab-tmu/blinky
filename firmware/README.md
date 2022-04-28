@@ -1,6 +1,14 @@
 # blinky_ota について
 
-blinky_otaは OTA (Over The Air) でプログラムの更新を行うことができます。<br>
+blinky_otaは，ESP32用ファームウェアです．
+ESP32デバイスの制御のためのAPIに加え，OTA (Over The Air) でプログラムの更新を行う機能を有しています。
+
+# 準備
+blinky_otaをESP32デバイスにインストールするためにはESP32の開発環境であるESP-IDF **v4.2**が必要です（他のバージョンでは動作しません）．
+[公式ページ](https://docs.espressif.com/projects/esp-idf/en/v4.2.3/esp32/get-started/index.html)．
+Windows環境の場合は，**WSL 1**を利用して，Linux版の手順に従うことをおすすめします．
+
+
 その為には、`idf.py menuconfig`での設定と、1度だけ有線接続での書き込みが必要となります。<br>
 詳細は以下を参照ください。
 
